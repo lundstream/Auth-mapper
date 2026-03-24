@@ -136,6 +136,49 @@ function Resolve-IpToHostname {
     }
 }
 
+# ── Helper: Resolve UPN to DOMAIN\sAMAccountName ────────────────────────────
+$upnCache = @{}
+function Resolve-AccountName {
+    param(
+        [string]$UserName,
+        [string]$Domain
+    )
+    # If already in DOMAIN\user format, return as-is
+    if ($UserName -match '\\') { return $UserName }
+
+    # Detect UPN format: user@domain.com
+    if ($UserName -match '^(.+)@(.+)$') {
+        $upn = $UserName
+        if ($upnCache.ContainsKey($upn)) { return $upnCache[$upn] }
+
+        # Try AD lookup: find sAMAccountName by UPN
+        try {
+            $searcher = New-Object System.DirectoryServices.DirectorySearcher
+            $searcher.Filter = "(userPrincipalName=$upn)"
+            $searcher.PropertiesToLoad.Add('sAMAccountName') | Out-Null
+            $searcher.PropertiesToLoad.Add('msDS-PrincipalName') | Out-Null
+            $result = $searcher.FindOne()
+            if ($result) {
+                $sam = [string]$result.Properties['samaccountname'][0]
+                $d = Normalize-DomainName ($Matches[2])
+                $resolved = if ($d -and $d -ne '-') { "$d\$sam" } else { $sam }
+                $upnCache[$upn] = $resolved
+                return $resolved
+            }
+        } catch { }
+
+        # Fallback: strip @domain and use domain prefix (best effort)
+        $d = Normalize-DomainName ($Matches[2])
+        $fallback = if ($d -and $d -ne '-') { "$d\$($Matches[1])" } else { $Matches[1] }
+        $upnCache[$upn] = $fallback
+        return $fallback
+    }
+
+    # Plain username: prefix with domain if available
+    $d = if ($Domain) { Normalize-DomainName $Domain } else { '' }
+    return if ($d -and $d -ne '-') { "$d\$UserName" } else { $UserName }
+}
+
 # ── Helper: Add an auth mapping ─────────────────────────────────────────────
 function Add-AuthMapping {
     param(
@@ -321,12 +364,8 @@ try {
         if ($spnParts.Count -lt 2) { continue }
         $spnHost = $spnParts[1] -split '\.' | Select-Object -First 1
 
-        # Clean up account name: user@DOMAIN.COM -> DOMAIN\user
-        $account = $targetUser
-        if ($targetUser -match '^(.+)@(.+)$') {
-            $domain = Normalize-DomainName $Matches[2]
-            $account = "$domain\$($Matches[1])"
-        }
+        # Resolve UPN to DOMAIN\sAMAccountName via AD lookup
+        $account = Resolve-AccountName -UserName $targetUser -Domain ''
 
         Add-AuthMapping -Computer $spnHost -IpAddress $ipAddress -Account $account -AuthType 'Kerberos'
         $count4769++
@@ -381,8 +420,7 @@ try {
         $computerName = Resolve-IpToHostname $ip
         if (-not $computerName) { continue }  # skip if no DNS match
 
-        $domain = Normalize-DomainName $targetDomain
-        $account = if ($domain -and $domain -ne '-') { "$domain\$targetUser" } else { $targetUser }
+        $account = Resolve-AccountName -UserName $targetUser -Domain $targetDomain
 
         Add-AuthMapping -Computer $computerName -IpAddress $ip -Account $account -AuthType 'Kerberos'
         $count4768++
