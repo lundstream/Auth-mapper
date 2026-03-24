@@ -96,6 +96,14 @@ function Normalize-ComputerName {
     return $n
 }
 
+# ── Helper: Normalize domain name (FQDN to NetBIOS) ───────────────────────────
+function Normalize-DomainName {
+    param([string]$Domain)
+    if ([string]::IsNullOrWhiteSpace($Domain) -or $Domain -eq '-') { return $Domain }
+    # CONTOSO.COM -> CONTOSO, sub.domain.local -> SUB
+    return ($Domain -split '\.')[0].ToUpper()
+}
+
 # ── Helper: Reverse-resolve IP to hostname ──────────────────────────────────
 $dnsCache = @{}
 function Resolve-IpToHostname {
@@ -194,7 +202,8 @@ try {
         if ($targetDomain -in @('Window Manager', 'Font Driver Host', 'NT AUTHORITY')) { continue }
 
         $computerName = if ($workstation) { $workstation } else { $DomainController }
-        $account = if ($targetDomain -and $targetDomain -ne '-') { "$targetDomain\$targetUser" } else { $targetUser }
+        $domain = Normalize-DomainName $targetDomain
+        $account = if ($domain -and $domain -ne '-') { "$domain\$targetUser" } else { $targetUser }
 
         Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account
         $count4624++
@@ -293,10 +302,11 @@ try {
         if ($spnParts.Count -lt 2) { continue }
         $spnHost = $spnParts[1] -split '\.' | Select-Object -First 1
 
-        # Clean up account name: user@DOMAIN -> DOMAIN\user
+        # Clean up account name: user@DOMAIN.COM -> DOMAIN\user
         $account = $targetUser
         if ($targetUser -match '^(.+)@(.+)$') {
-            $account = "$($Matches[2])\$($Matches[1])"
+            $domain = Normalize-DomainName $Matches[2]
+            $account = "$domain\$($Matches[1])"
         }
 
         Add-AuthMapping -Computer $spnHost -IpAddress $ipAddress -Account $account
@@ -350,10 +360,10 @@ try {
         # Reverse-resolve IP to hostname for the source workstation
         $ip = $ipAddress -replace '^::ffff:', ''
         $computerName = Resolve-IpToHostname $ip
-        if (-not $computerName) { $computerName = $ip }
-        if (-not $computerName -or $computerName -eq '-') { continue }
+        if (-not $computerName) { continue }  # skip if no DNS match
 
-        $account = if ($targetDomain -and $targetDomain -ne '-') { "$targetDomain\$targetUser" } else { $targetUser }
+        $domain = Normalize-DomainName $targetDomain
+        $account = if ($domain -and $domain -ne '-') { "$domain\$targetUser" } else { $targetUser }
 
         Add-AuthMapping -Computer $computerName -IpAddress $ip -Account $account
         $count4768++
