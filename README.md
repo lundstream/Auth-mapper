@@ -1,6 +1,6 @@
 # Auth Mapper
 
-Visualize which accounts authenticate against which servers by collecting data from Domain Controller security logs.
+Visualize which accounts authenticate against which servers by collecting data from Domain Controller security logs. Designed to run locally on a Windows machine in your on-prem environment.
 
 ## Screenshots
 
@@ -50,14 +50,29 @@ wevtutil epl Security \\jumphost\c$\temp\dc01_security.evtx /q:"*[System[(EventI
 
 Output: `auth_inventory_YYYYMMDD_HHmmss.json`
 
-### 2. Start the Web App
+### 2. Set Up the Web App (Windows)
 
-```bash
+**Prerequisites:**
+- [Node.js](https://nodejs.org/) (v18 or later) — download the Windows installer from nodejs.org
+- Git (optional, for cloning the repo)
+
+**Install and run:**
+
+```powershell
+# Clone the repo (or download and extract the ZIP)
+git clone https://github.com/lundstream/Auth-mapper.git
+cd Auth-mapper
+
+# Install dependencies
 npm install
+
+# Start the server
 npm start
 ```
 
-Open http://localhost:3002
+Open http://localhost:3002 in your browser.
+
+The app runs entirely on your local machine — no internet connection required after setup.
 
 ### 3. Import Data
 
