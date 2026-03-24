@@ -316,7 +316,13 @@ try {
         $computerName = if ($workstation) { $workstation } else { $DomainController }
         $account = Resolve-AccountName -UserName $targetUser -Domain $targetDomain
 
-        Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account -AuthType 'Logon'
+        # Use actual auth protocol from event (Kerberos, NTLM, Negotiate)
+        $authPkg = [string]$props[10].Value
+        if ($authPkg -like 'NTLM*' -or $authPkg -eq 'NtLmSsp') { $authType = 'NTLM' }
+        elseif ($authPkg -eq 'Kerberos') { $authType = 'Kerberos' }
+        else { $authType = 'Negotiate' }
+
+        Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account -AuthType $authType
         $count4624++
     }
     Write-Host "    Found $count4624 relevant logon events from $($events4624.Count) total 4624 events" -ForegroundColor Green

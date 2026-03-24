@@ -21,8 +21,8 @@ function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.
 
 function authBadges(types) {
   if (!types || !Array.isArray(types) || types.length === 0) return '';
-  const map = { NTLM: 'ntlm', Kerberos: 'kerberos', Logon: 'logon' };
-  return types.map(t => `<span class="badge-auth badge-${map[t] || 'logon'}">${esc(t)}</span>`).join('');
+  const map = { NTLM: 'ntlm', Kerberos: 'kerberos', Negotiate: 'negotiate' };
+  return types.map(t => `<span class="badge-auth badge-${map[t] || 'ntlm'}">${esc(t)}</span>`).join('');
 }
 
 function toast(msg, type = 'success') {
