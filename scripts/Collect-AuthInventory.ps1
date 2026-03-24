@@ -126,6 +126,57 @@ if ($needsRefresh) {
     $upnMap = Build-UpnCache -CachePath $upnCachePath
 }
 
+# ── gMSA account cache ─────────────────────────────────────────────────────
+$gmsaCachePath = Join-Path $PSScriptRoot 'gmsa_cache.json'
+$gmsaSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+function Build-GmsaCache {
+    param([string]$CachePath)
+    Write-Host "[*] Building gMSA cache from AD..." -ForegroundColor Yellow
+    $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    try {
+        $searcher = New-Object System.DirectoryServices.DirectorySearcher
+        $searcher.Filter = '(objectClass=msDS-GroupManagedServiceAccount)'
+        $searcher.PropertiesToLoad.Add('sAMAccountName') | Out-Null
+        $searcher.PageSize = 1000
+        $results = $searcher.FindAll()
+        foreach ($r in $results) {
+            $sam = [string]$r.Properties['samaccountname'][0]
+            if ($sam) { $set.Add($sam) | Out-Null }
+        }
+        $results.Dispose()
+        $cache = @{ generated_at = (Get-Date).ToString('o'); accounts = @($set) }
+        $cache | ConvertTo-Json -Depth 3 -Compress | Set-Content -Path $CachePath -Encoding UTF8
+        Write-Host "    Cached $($set.Count) gMSA accounts" -ForegroundColor Green
+    } catch {
+        Write-Host "    Warning: Could not query AD for gMSA accounts: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+    return $set
+}
+
+# Load or refresh the gMSA cache (shares TTL with UPN cache)
+$gmsaNeedsRefresh = $RefreshUpnCache.IsPresent
+if (-not $gmsaNeedsRefresh -and (Test-Path $gmsaCachePath)) {
+    try {
+        $gmsaData = Get-Content $gmsaCachePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $gmsaAge = (Get-Date) - [datetime]$gmsaData.generated_at
+        if ($gmsaAge.TotalHours -gt $UpnCacheHours) {
+            $gmsaNeedsRefresh = $true
+        } else {
+            foreach ($a in $gmsaData.accounts) { $gmsaSet.Add($a) | Out-Null }
+            Write-Host "[*] gMSA cache loaded : $($gmsaSet.Count) accounts (age: $([math]::Round($gmsaAge.TotalHours, 1))h)" -ForegroundColor Yellow
+        }
+    } catch {
+        $gmsaNeedsRefresh = $true
+    }
+} else {
+    $gmsaNeedsRefresh = $true
+}
+
+if ($gmsaNeedsRefresh) {
+    $gmsaSet = Build-GmsaCache -CachePath $gmsaCachePath
+}
+
 Write-Host "[*] Time range        : $($cutoff.ToString('yyyy-MM-dd HH:mm')) to $($startTime.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Yellow
 Write-Host "[*] Hours back        : $HoursBack" -ForegroundColor Yellow
 Write-Host ""
@@ -308,8 +359,8 @@ try {
         $workstation  = [string]$props[11].Value
         $ipAddress    = [string]$props[18].Value
 
-        # Skip machine accounts (ending in $) and common system accounts
-        if ($targetUser -match '\$$') { continue }
+        # Skip machine accounts (ending in $) but allow gMSAs
+        if ($targetUser -match '\$$' -and -not $gmsaSet.Contains($targetUser)) { continue }
         if ($targetUser -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'DWM-1', 'DWM-2', 'UMFD-0', 'UMFD-1')) { continue }
         if ($targetDomain -in @('Window Manager', 'Font Driver Host', 'NT AUTHORITY')) { continue }
 
@@ -361,7 +412,7 @@ try {
         $targetUser  = [string]$props[1].Value
         $workstation = [string]$props[2].Value
 
-        if ([string]::IsNullOrWhiteSpace($targetUser) -or $targetUser -match '\$$') { continue }
+        if ([string]::IsNullOrWhiteSpace($targetUser) -or ($targetUser -match '\$$' -and -not $gmsaSet.Contains($targetUser))) { continue }
         if ($targetUser -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE')) { continue }
 
         if ($workstation) {
@@ -412,7 +463,7 @@ try {
         $ipAddress   = [string]$props[6].Value
 
         # Skip machine accounts and krbtgt (TGT renewals)
-        if ($targetUser -match '\$$') { continue }
+        if ($targetUser -match '\$$' -and -not $gmsaSet.Contains($targetUser)) { continue }
         if ([string]::IsNullOrWhiteSpace($serviceName) -or $serviceName -eq 'krbtgt') { continue }
 
         # Extract computer name from SPN (format: service/hostname or service/hostname.domain)
@@ -467,8 +518,8 @@ try {
         $targetDomain = [string]$props[1].Value
         $ipAddress    = [string]$props[9].Value
 
-        # Skip machine accounts
-        if ($targetUser -match '\$$') { continue }
+        # Skip machine accounts (but allow gMSAs)
+        if ($targetUser -match '\$$' -and -not $gmsaSet.Contains($targetUser)) { continue }
         if ([string]::IsNullOrWhiteSpace($targetUser)) { continue }
 
         # Reverse-resolve IP to hostname for the source workstation
