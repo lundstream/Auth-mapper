@@ -172,7 +172,14 @@ function importData(jsonData, sourceFile) {
 
 /* ── Queries ───────────────────────────────────────────────────────────── */
 
-function getDashboardStats() {
+function buildSvcCondition(col, patterns) {
+  if (!patterns || patterns.length === 0) return { sql: '1=0', params: [] };
+  const sql = '(' + patterns.map(() => `${col} LIKE ?`).join(' OR ') + ')';
+  const params = patterns.map(p => `%${p}%`);
+  return { sql, params };
+}
+
+function getDashboardStats(svcPatterns) {
   const db = getDb();
 
   const totalComputers = db.prepare(`SELECT COUNT(*) as cnt FROM computers`).get().cnt;
@@ -202,10 +209,11 @@ function getDashboardStats() {
   `).all();
 
   // Account type breakdown (service vs user)
+  const svcCond = buildSvcCondition('name', svcPatterns || ['svc', 'service']);
   const svcAccounts = db.prepare(`
     SELECT COUNT(*) as cnt FROM accounts
-    WHERE name LIKE '%svc%' OR name LIKE '%service%'
-  `).get().cnt;
+    WHERE ${svcCond.sql}
+  `).get(...svcCond.params).cnt;
 
   // OUs with most computers
   const topOUs = db.prepare(`
@@ -247,7 +255,7 @@ function getDashboardStats() {
   };
 }
 
-function getComputers({ search, ouFilter, sort, dir, page, limit }) {
+function getComputers({ search, ouFilter, sort, dir, page, limit, svcOnly, svcPatterns }) {
   const db = getDb();
   const conditions = [];
   const params = [];
@@ -259,6 +267,11 @@ function getComputers({ search, ouFilter, sort, dir, page, limit }) {
   if (ouFilter) {
     conditions.push(`c.ou LIKE ?`);
     params.push(`%${ouFilter}%`);
+  }
+  if (svcOnly && svcPatterns && svcPatterns.length > 0) {
+    const svcCond = buildSvcCondition('sa.name', svcPatterns);
+    conditions.push(`c.id IN (SELECT sm.computer_id FROM auth_mappings sm JOIN accounts sa ON sa.id = sm.account_id WHERE ${svcCond.sql})`);
+    params.push(...svcCond.params);
   }
 
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -278,7 +291,7 @@ function getComputers({ search, ouFilter, sort, dir, page, limit }) {
     SELECT c.id, c.name, c.ou, c.first_seen, c.last_seen,
            COUNT(DISTINCT m.account_id) as account_count,
            COUNT(DISTINCT ci.ip) as ip_count,
-           GROUP_CONCAT(DISTINCT ci.ip) as ips
+           GROUP_CONCAT(DISTINCT ci.ip, '; ') as ips
     FROM computers c
     LEFT JOIN auth_mappings m ON m.computer_id = c.id
     LEFT JOIN computer_ips ci ON ci.computer_id = c.id
@@ -313,7 +326,7 @@ function getComputerDetail(name) {
   return { ...computer, ips, accounts };
 }
 
-function getAccounts({ search, sort, dir, page, limit }) {
+function getAccounts({ search, sort, dir, page, limit, svcOnly, svcPatterns }) {
   const db = getDb();
   const conditions = [];
   const params = [];
@@ -321,6 +334,11 @@ function getAccounts({ search, sort, dir, page, limit }) {
   if (search) {
     conditions.push(`a.name LIKE ?`);
     params.push(`%${search}%`);
+  }
+  if (svcOnly && svcPatterns && svcPatterns.length > 0) {
+    const svcCond = buildSvcCondition('a.name', svcPatterns);
+    conditions.push(svcCond.sql);
+    params.push(...svcCond.params);
   }
 
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -356,7 +374,7 @@ function getAccountDetail(name) {
 
   const computers = db.prepare(`
     SELECT c.name, c.ou, m.first_seen, m.last_seen,
-           GROUP_CONCAT(DISTINCT ci.ip) as ips
+           GROUP_CONCAT(DISTINCT ci.ip, '; ') as ips
     FROM auth_mappings m
     JOIN computers c ON c.id = m.computer_id
     LEFT JOIN computer_ips ci ON ci.computer_id = c.id
@@ -368,7 +386,7 @@ function getAccountDetail(name) {
   return { ...account, computers };
 }
 
-function getNetworkData({ search, accountFilter }) {
+function getNetworkData({ search, accountFilter, ouFilter, svcOnly, svcPatterns }) {
   const db = getDb();
   const conditions = [];
   const params = [];
@@ -380,6 +398,15 @@ function getNetworkData({ search, accountFilter }) {
   if (accountFilter) {
     conditions.push(`a.name LIKE ?`);
     params.push(`%${accountFilter}%`);
+  }
+  if (ouFilter) {
+    conditions.push(`c.ou LIKE ?`);
+    params.push(`%${ouFilter}%`);
+  }
+  if (svcOnly && svcPatterns && svcPatterns.length > 0) {
+    const svcCond = buildSvcCondition('a.name', svcPatterns);
+    conditions.push(svcCond.sql);
+    params.push(...svcCond.params);
   }
 
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -393,6 +420,7 @@ function getNetworkData({ search, accountFilter }) {
     JOIN computers c ON c.id = m.computer_id
     JOIN accounts a ON a.id = m.account_id
     ${where}
+    LIMIT 5000
   `).all(...params);
 
   for (const row of rows) {
@@ -419,7 +447,7 @@ function getExportData({ type, search, accountFilter, ouFilter }) {
     const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
     return db.prepare(`
-      SELECT c.name as Computer, GROUP_CONCAT(DISTINCT ci.ip) as IPs, c.ou as OU,
+      SELECT c.name as Computer, GROUP_CONCAT(DISTINCT ci.ip, '; ') as IPs, c.ou as OU,
              COUNT(DISTINCT m.account_id) as Account_Count, c.first_seen as First_Seen, c.last_seen as Last_Seen
       FROM computers c
       LEFT JOIN computer_ips ci ON ci.computer_id = c.id
@@ -454,7 +482,7 @@ function getExportData({ type, search, accountFilter, ouFilter }) {
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
   return db.prepare(`
-    SELECT c.name as Computer, GROUP_CONCAT(DISTINCT ci.ip) as IPs, c.ou as OU,
+      SELECT c.name as Computer, GROUP_CONCAT(DISTINCT ci.ip, '; ') as IPs, c.ou as OU,
            a.name as Account, m.first_seen as First_Seen, m.last_seen as Last_Seen
     FROM auth_mappings m
     JOIN computers c ON c.id = m.computer_id

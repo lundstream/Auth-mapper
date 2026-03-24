@@ -10,6 +10,11 @@ let networkData = null;
 let netZoom = 1, netPanX = 0, netPanY = 0;
 let netDragging = false, netDragStartX = 0, netDragStartY = 0;
 let netNodePositions = null;
+let svcPatterns = ['svc', 'service'];
+let svcRegex = /svc|service/i;
+let compSvcOnly = false;
+let acctSvcOnly = false;
+let netSvcOnly = false;
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -51,6 +56,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupModals();
   setupImport();
   setupExport();
+  setupSvcPatterns();
+  loadSvcPatterns();
   loadDashboard();
 });
 
@@ -260,6 +267,73 @@ function rebuildCharts() {
   loadDashboard();
 }
 
+/* ── SVC Patterns ──────────────────────────────────────────────────────── */
+
+async function loadSvcPatterns() {
+  try {
+    const r = await fetch('/api/settings/svc-patterns');
+    const patterns = await r.json();
+    if (Array.isArray(patterns) && patterns.length > 0) {
+      svcPatterns = patterns;
+      svcRegex = new RegExp(patterns.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
+    }
+    renderSvcPatterns();
+  } catch (err) {
+    console.error('Failed to load SVC patterns:', err);
+  }
+}
+
+function setupSvcPatterns() {
+  const addBtn = document.getElementById('svcPatternAddBtn');
+  const input = document.getElementById('svcPatternInput');
+  if (addBtn) addBtn.addEventListener('click', addSvcPattern);
+  if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') addSvcPattern(); });
+}
+
+function renderSvcPatterns() {
+  const el = document.getElementById('svcPatternList');
+  if (!el) return;
+  el.innerHTML = svcPatterns.map(p =>
+    `<span class="badge badge-yellow" style="cursor:pointer;font-size:13px;padding:4px 12px;" title="Click to remove" data-pattern="${esc(p)}">${esc(p)} \u00d7</span>`
+  ).join('');
+  el.querySelectorAll('.badge').forEach(b => {
+    b.addEventListener('click', () => removeSvcPattern(b.dataset.pattern));
+  });
+}
+
+async function addSvcPattern() {
+  const input = document.getElementById('svcPatternInput');
+  const val = input.value.trim();
+  if (!val) return;
+  if (svcPatterns.includes(val)) { toast('Pattern already exists', 'error'); return; }
+  await saveSvcPatterns([...svcPatterns, val]);
+  input.value = '';
+}
+
+async function removeSvcPattern(pattern) {
+  const newPatterns = svcPatterns.filter(p => p !== pattern);
+  if (newPatterns.length === 0) { toast('At least one pattern is required', 'error'); return; }
+  await saveSvcPatterns(newPatterns);
+}
+
+async function saveSvcPatterns(patterns) {
+  try {
+    const r = await fetch('/api/settings/svc-patterns', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patterns })
+    });
+    const result = await r.json();
+    if (result.error) { toast(result.error, 'error'); return; }
+    svcPatterns = result.patterns;
+    svcRegex = new RegExp(svcPatterns.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
+    renderSvcPatterns();
+    toast('Service account patterns updated');
+  } catch (err) {
+    toast('Failed to save patterns: ' + err.message, 'error');
+  }
+}
+
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* ── COMPUTERS ────────────────────────────────────────────────────────── */
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -270,6 +344,7 @@ async function loadComputers() {
   });
   if (compSearch) params.set('q', wildcardToLike(compSearch));
   if (compOuFilter) params.set('ou', wildcardToLike(compOuFilter));
+  if (compSvcOnly) params.set('svcOnly', '1');
 
   try {
     const r = await fetch('/api/computers?' + params);
@@ -372,6 +447,8 @@ document.addEventListener('DOMContentLoaded', () => {
     clearTimeout(compSearchTimer);
     compSearchTimer = setTimeout(() => { compOuFilter = ouEl.value.trim(); compPage = 1; loadComputers(); }, 300);
   });
+  const compSvcSel = document.getElementById('compSvcFilter');
+  if (compSvcSel) compSvcSel.addEventListener('change', () => { compSvcOnly = compSvcSel.value === 'svc'; compPage = 1; loadComputers(); });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -402,7 +479,7 @@ function renderAccounts(accounts) {
     return;
   }
   body.innerHTML = accounts.map(a => {
-    const isSvc = /svc|service/i.test(a.name);
+    const isSvc = svcRegex.test(a.name);
     return `
       <tr data-name="${esc(a.name)}">
         <td><strong>${esc(a.name)}</strong> ${isSvc ? '<span class="badge badge-yellow">SVC</span>' : ''}</td>
@@ -429,7 +506,7 @@ async function openAccountDetail(name) {
   try {
     const r = await fetch('/api/accounts/' + encodeURIComponent(name));
     const data = await r.json();
-    const isSvc = /svc|service/i.test(data.name);
+    const isSvc = svcRegex.test(data.name);
 
     body.innerHTML = `
       <div class="detail-grid">
@@ -485,6 +562,8 @@ document.addEventListener('DOMContentLoaded', () => {
     clearTimeout(acctSearchTimer);
     acctSearchTimer = setTimeout(() => { acctSearch = el.value.trim(); acctPage = 1; loadAccounts(); }, 300);
   });
+  const acctSvcSel = document.getElementById('acctSvcFilter');
+  if (acctSvcSel) acctSvcSel.addEventListener('change', () => { acctSvcOnly = acctSvcSel.value === 'svc'; acctPage = 1; loadAccounts(); });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -521,8 +600,11 @@ async function loadNetwork() {
   const params = new URLSearchParams();
   const search = document.getElementById('netSearch').value.trim();
   const acctFilter = document.getElementById('netAccountFilter').value.trim();
+  const ouFilter = document.getElementById('netOuFilter').value.trim();
   if (search) params.set('q', wildcardToLike(search));
   if (acctFilter) params.set('account', wildcardToLike(acctFilter));
+  if (ouFilter) params.set('ou', wildcardToLike(ouFilter));
+  if (netSvcOnly) params.set('svcOnly', '1');
 
   try {
     const r = await fetch('/api/network?' + params);
@@ -581,8 +663,9 @@ function initNetworkGraph() {
     t: nodeMap.get(l.target)
   })).filter(l => l.s !== undefined && l.t !== undefined);
 
-  // Simple force simulation
-  const iterations = 120;
+  // Simple force simulation — scale iterations with graph size
+  const itersBase = Math.max(40, Math.min(120, Math.round(6000 / nodes.length)));
+  const iterations = itersBase;
   const repulsion = 800;
   const attraction = 0.003;
   const damping = 0.92;
@@ -643,7 +726,10 @@ function drawNetwork(canvas) {
   const W = rect.width, H = rect.height;
   const cs = getComputedStyle(document.documentElement);
 
-  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
   ctx.save();
   ctx.translate(netPanX, netPanY);
   ctx.scale(netZoom, netZoom);
@@ -657,13 +743,13 @@ function drawNetwork(canvas) {
 
   const accentColor = '#4f8cff';
   const warningColor = '#f5a623';
-  const lineColor = cs.getPropertyValue('--border2').trim() || '#353840';
+  const lineColor = '#6b7280';
   const textColor = cs.getPropertyValue('--text').trim() || '#e4e6ed';
 
   // Draw links
   ctx.strokeStyle = lineColor;
-  ctx.lineWidth = 0.5;
-  ctx.globalAlpha = 0.4;
+  ctx.lineWidth = 0.8;
+  ctx.globalAlpha = 0.5;
   for (const link of links) {
     const s = nodeMap.get(link.source);
     const t = nodeMap.get(link.target);
@@ -701,6 +787,11 @@ function setupNetworkInteraction(canvas) {
   // Remove old listeners by cloning
   const newCanvas = canvas.cloneNode(true);
   canvas.parentNode.replaceChild(newCanvas, canvas);
+
+  // Re-apply devicePixelRatio scaling on the fresh context
+  const freshCtx = newCanvas.getContext('2d');
+  freshCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  drawNetwork(newCanvas);
 
   let dragging = false, lastX = 0, lastY = 0;
 
@@ -751,8 +842,12 @@ document.addEventListener('DOMContentLoaded', () => {
   let netTimer;
   const netSearch = document.getElementById('netSearch');
   const netAcct = document.getElementById('netAccountFilter');
+  const netOu = document.getElementById('netOuFilter');
+  const netSvcSel = document.getElementById('netSvcFilter');
   if (netSearch) netSearch.addEventListener('input', () => { clearTimeout(netTimer); netTimer = setTimeout(loadNetwork, 500); });
   if (netAcct) netAcct.addEventListener('input', () => { clearTimeout(netTimer); netTimer = setTimeout(loadNetwork, 500); });
+  if (netOu) netOu.addEventListener('input', () => { clearTimeout(netTimer); netTimer = setTimeout(loadNetwork, 500); });
+  if (netSvcSel) netSvcSel.addEventListener('change', () => { netSvcOnly = netSvcSel.value === 'svc'; loadNetwork(); });
   const netRefresh = document.getElementById('netRefreshBtn');
   if (netRefresh) netRefresh.addEventListener('click', loadNetwork);
 });

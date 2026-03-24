@@ -368,6 +368,10 @@ body.modal-open { overflow: hidden; }
         <div class="panel-actions">
           <input type="text" class="search-input" id="compSearch" placeholder="Filter by name or IP (e.g. svc*, 10.0.*)">
           <input type="text" class="search-input" id="compOuFilter" placeholder="Filter by OU" style="width:200px;">
+          <select class="search-input" id="compSvcFilter" style="width:170px;">
+            <option value="all">All Accounts</option>
+            <option value="svc">Service Accounts Only</option>
+          </select>
           <button class="btn btn-outline btn-sm" id="compExportBtn"><i data-feather="download" style="width:14px;height:14px"></i> CSV</button>
         </div>
       </div>
@@ -398,6 +402,10 @@ body.modal-open { overflow: hidden; }
         <h2>Accounts</h2>
         <div class="panel-actions">
           <input type="text" class="search-input" id="acctSearch" placeholder="Filter accounts (e.g. svc*, admin*)">
+          <select class="search-input" id="acctSvcFilter" style="width:170px;">
+            <option value="all">All Accounts</option>
+            <option value="svc">Service Accounts Only</option>
+          </select>
           <button class="btn btn-outline btn-sm" id="acctExportBtn"><i data-feather="download" style="width:14px;height:14px"></i> CSV</button>
         </div>
       </div>
@@ -428,6 +436,11 @@ body.modal-open { overflow: hidden; }
         <div class="panel-actions">
           <input type="text" class="search-input" id="netSearch" placeholder="Filter by computer or account name">
           <input type="text" class="search-input" id="netAccountFilter" placeholder="Account filter (e.g. svc*)" style="width:200px;">
+          <input type="text" class="search-input" id="netOuFilter" placeholder="Filter by OU" style="width:200px;">
+          <select class="search-input" id="netSvcFilter" style="width:170px;">
+            <option value="all">All Accounts</option>
+            <option value="svc">Service Accounts Only</option>
+          </select>
           <button class="btn btn-outline btn-sm" id="netRefreshBtn"><i data-feather="refresh-cw" style="width:14px;height:14px"></i> Refresh</button>
         </div>
       </div>
@@ -461,6 +474,20 @@ body.modal-open { overflow: hidden; }
       <div style="padding:20px; display:flex; gap:12px; align-items:center;">
         <input type="text" class="search-input" id="importPathInput" placeholder="C:\path\to\auth_inventory_*.json" style="flex:1;">
         <button class="btn btn-primary" id="importPathBtn">Import</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Service Account Patterns</h2>
+      </div>
+      <div style="padding:20px;">
+        <p style="font-size:13px;color:var(--text3);margin-bottom:12px;">Define naming patterns to identify service accounts. Accounts whose name contains any of these patterns (case-insensitive) will be tagged as service accounts.</p>
+        <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px;">
+          <input type="text" class="search-input" id="svcPatternInput" placeholder="e.g. svc, admin, batch" style="flex:1;">
+          <button class="btn btn-primary btn-sm" id="svcPatternAddBtn">Add</button>
+        </div>
+        <div id="svcPatternList" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
       </div>
     </div>
 

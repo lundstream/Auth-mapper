@@ -81,7 +81,7 @@ app.post('/api/import/file', (req, res) => {
 // Dashboard stats
 app.get('/api/dashboard', (req, res) => {
   try {
-    res.json(db.getDashboardStats());
+    res.json(db.getDashboardStats(settings.svcPatterns || ['svc', 'service']));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -90,14 +90,16 @@ app.get('/api/dashboard', (req, res) => {
 // Computers list
 app.get('/api/computers', (req, res) => {
   try {
-    const { q, ou, sort, dir, page, limit } = req.query;
+    const { q, ou, sort, dir, page, limit, svcOnly } = req.query;
     res.json(db.getComputers({
       search: q || '',
       ouFilter: ou || '',
       sort: sort || 'name',
       dir: dir || 'ASC',
       page: parseInt(page) || 1,
-      limit: parseInt(limit) || 100
+      limit: parseInt(limit) || 100,
+      svcOnly: svcOnly === '1',
+      svcPatterns: settings.svcPatterns || ['svc', 'service']
     }));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -118,13 +120,15 @@ app.get('/api/computers/:name', (req, res) => {
 // Accounts list
 app.get('/api/accounts', (req, res) => {
   try {
-    const { q, sort, dir, page, limit } = req.query;
+    const { q, sort, dir, page, limit, svcOnly } = req.query;
     res.json(db.getAccounts({
       search: q || '',
       sort: sort || 'name',
       dir: dir || 'ASC',
       page: parseInt(page) || 1,
-      limit: parseInt(limit) || 100
+      limit: parseInt(limit) || 100,
+      svcOnly: svcOnly === '1',
+      svcPatterns: settings.svcPatterns || ['svc', 'service']
     }));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -145,8 +149,14 @@ app.get('/api/accounts/:name', (req, res) => {
 // Network graph data
 app.get('/api/network', (req, res) => {
   try {
-    const { q, account } = req.query;
-    res.json(db.getNetworkData({ search: q || '', accountFilter: account || '' }));
+    const { q, account, ou, svcOnly } = req.query;
+    res.json(db.getNetworkData({
+      search: q || '',
+      accountFilter: account || '',
+      ouFilter: ou || '',
+      svcOnly: svcOnly === '1',
+      svcPatterns: settings.svcPatterns || ['svc', 'service']
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -204,6 +214,24 @@ app.post('/api/purge', (req, res) => {
   try {
     db.purgeAllData();
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// SVC patterns
+app.get('/api/settings/svc-patterns', (req, res) => {
+  res.json(settings.svcPatterns || ['svc', 'service']);
+});
+
+app.put('/api/settings/svc-patterns', (req, res) => {
+  try {
+    const { patterns } = req.body;
+    if (!Array.isArray(patterns)) return res.status(400).json({ error: 'patterns must be an array' });
+    settings.svcPatterns = patterns.map(p => String(p).trim()).filter(Boolean);
+    if (settings.svcPatterns.length === 0) settings.svcPatterns = ['svc', 'service'];
+    fs.writeFileSync(path.join(__dirname, 'settings.json'), JSON.stringify(settings, null, 2));
+    res.json({ ok: true, patterns: settings.svcPatterns });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
