@@ -387,6 +387,9 @@ body.modal-open { overflow: hidden; }
           <select class="search-input" id="compTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
           </select>
+          <select class="search-input" id="compOwnerFilter" style="width:150px;">
+            <option value="">All Owners</option>
+          </select>
           <select class="search-input" id="compSvcFilter" style="width:220px;">
             <option value="all">All Computers</option>
             <option value="svc">With Service Accounts Only</option>
@@ -426,6 +429,9 @@ body.modal-open { overflow: hidden; }
           <select class="search-input" id="acctTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
           </select>
+          <select class="search-input" id="acctOwnerFilter" style="width:150px;">
+            <option value="">All Owners</option>
+          </select>
           <select class="search-input" id="acctSvcFilter" style="width:170px;">
             <option value="all">All Accounts</option>
             <option value="svc">Service Accounts Only</option>
@@ -461,10 +467,12 @@ body.modal-open { overflow: hidden; }
         <h2>Authentication Network Map</h2>
         <div class="panel-actions">
           <input type="text" class="search-input" id="netSearch" placeholder="Filter by computer or account name">
-          <input type="text" class="search-input" id="netAccountFilter" placeholder="Account filter (e.g. svc*)" style="width:200px;">
           <input type="text" class="search-input" id="netOuFilter" placeholder="Filter by OU" style="width:200px;">
           <select class="search-input" id="netTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
+          </select>
+          <select class="search-input" id="netOwnerFilter" style="width:150px;">
+            <option value="">All Owners</option>
           </select>
           <select class="search-input" id="netSvcFilter" style="width:170px;">
             <option value="all">All Accounts</option>

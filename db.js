@@ -349,7 +349,7 @@ function getDashboardStats(svcPatterns) {
   };
 }
 
-function getComputers({ search, ouFilter, tierFilter, sort, dir, page, limit, svcOnly, svcPatterns }) {
+function getComputers({ search, ouFilter, tierFilter, ownerFilter, sort, dir, page, limit, svcOnly, svcPatterns }) {
   const db = getDb();
   const conditions = [];
   const params = [];
@@ -365,6 +365,10 @@ function getComputers({ search, ouFilter, tierFilter, sort, dir, page, limit, sv
   if (tierFilter) {
     conditions.push(`c.tier = ?`);
     params.push(tierFilter);
+  }
+  if (ownerFilter) {
+    conditions.push(`c.owner = ?`);
+    params.push(ownerFilter);
   }
   if (svcOnly && svcPatterns && svcPatterns.length > 0) {
     const svcCond = buildSvcCondition('sa.name', svcPatterns);
@@ -424,7 +428,7 @@ function getComputerDetail(name) {
   return { ...computer, ips, accounts };
 }
 
-function getAccounts({ search, tierFilter, sort, dir, page, limit, svcOnly, svcPatterns }) {
+function getAccounts({ search, tierFilter, ownerFilter, sort, dir, page, limit, svcOnly, svcPatterns }) {
   const db = getDb();
   const conditions = [];
   const params = [];
@@ -436,6 +440,10 @@ function getAccounts({ search, tierFilter, sort, dir, page, limit, svcOnly, svcP
   if (tierFilter) {
     conditions.push(`a.tier = ?`);
     params.push(tierFilter);
+  }
+  if (ownerFilter) {
+    conditions.push(`a.owner = ?`);
+    params.push(ownerFilter);
   }
   if (svcOnly && svcPatterns && svcPatterns.length > 0) {
     const svcCond = buildSvcCondition('a.name', svcPatterns);
@@ -487,7 +495,7 @@ function getAccountDetail(name) {
   return { ...account, computers };
 }
 
-function getNetworkData({ search, accountFilter, ouFilter, tierFilter, svcOnly, svcPatterns }) {
+function getNetworkData({ search, ouFilter, tierFilter, ownerFilter, svcOnly, svcPatterns }) {
   const db = getDb();
   const conditions = [];
   const params = [];
@@ -496,9 +504,9 @@ function getNetworkData({ search, accountFilter, ouFilter, tierFilter, svcOnly, 
     conditions.push(`(c.name LIKE ? OR a.name LIKE ?)`);
     params.push(`%${search}%`, `%${search}%`);
   }
-  if (accountFilter) {
-    conditions.push(`a.name LIKE ?`);
-    params.push(`%${accountFilter}%`);
+  if (ownerFilter) {
+    conditions.push(`(c.owner = ? OR a.owner = ?)`);
+    params.push(ownerFilter, ownerFilter);
   }
   if (ouFilter) {
     conditions.push(`c.ou LIKE ?`);

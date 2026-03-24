@@ -20,6 +20,9 @@ let owners = [];
 let compTierFilter = '';
 let acctTierFilter = '';
 let netTierFilter = '';
+let compOwnerFilter = '';
+let acctOwnerFilter = '';
+let netOwnerFilter = '';
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -376,6 +379,7 @@ async function loadComputers() {
   if (compOuFilter) params.set('ou', wildcardToLike(compOuFilter));
   if (compSvcOnly) params.set('svcOnly', '1');
   if (compTierFilter) params.set('tier', compTierFilter);
+  if (compOwnerFilter) params.set('owner', compOwnerFilter);
 
   try {
     const r = await fetch('/api/computers?' + params);
@@ -537,6 +541,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (compSvcSel) compSvcSel.addEventListener('change', () => { compSvcOnly = compSvcSel.value === 'svc'; compPage = 1; loadComputers(); });
   const compTierSel = document.getElementById('compTierFilter');
   if (compTierSel) compTierSel.addEventListener('change', () => { compTierFilter = compTierSel.value; compPage = 1; loadComputers(); });
+  const compOwnerSel = document.getElementById('compOwnerFilter');
+  if (compOwnerSel) compOwnerSel.addEventListener('change', () => { compOwnerFilter = compOwnerSel.value; compPage = 1; loadComputers(); });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -550,6 +556,7 @@ async function loadAccounts() {
   if (acctSearch) params.set('q', wildcardToLike(acctSearch));
   if (acctSvcOnly) params.set('svcOnly', '1');
   if (acctTierFilter) params.set('tier', acctTierFilter);
+  if (acctOwnerFilter) params.set('owner', acctOwnerFilter);
 
   try {
     const r = await fetch('/api/accounts?' + params);
@@ -711,6 +718,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (acctSvcSel) acctSvcSel.addEventListener('change', () => { acctSvcOnly = acctSvcSel.value === 'svc'; acctPage = 1; loadAccounts(); });
   const acctTierSel = document.getElementById('acctTierFilter');
   if (acctTierSel) acctTierSel.addEventListener('change', () => { acctTierFilter = acctTierSel.value; acctPage = 1; loadAccounts(); });
+  const acctOwnerSel = document.getElementById('acctOwnerFilter');
+  if (acctOwnerSel) acctOwnerSel.addEventListener('change', () => { acctOwnerFilter = acctOwnerSel.value; acctPage = 1; loadAccounts(); });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -746,13 +755,12 @@ function renderPagination(prefix, result) {
 async function loadNetwork() {
   const params = new URLSearchParams();
   const search = document.getElementById('netSearch').value.trim();
-  const acctFilter = document.getElementById('netAccountFilter').value.trim();
   const ouFilter = document.getElementById('netOuFilter').value.trim();
   if (search) params.set('q', wildcardToLike(search));
-  if (acctFilter) params.set('account', wildcardToLike(acctFilter));
   if (ouFilter) params.set('ou', wildcardToLike(ouFilter));
   if (netSvcOnly) params.set('svcOnly', '1');
   if (netTierFilter) params.set('tier', netTierFilter);
+  if (netOwnerFilter) params.set('owner', netOwnerFilter);
 
   try {
     const r = await fetch('/api/network?' + params);
@@ -989,15 +997,15 @@ function setupNetworkInteraction(canvas) {
 document.addEventListener('DOMContentLoaded', () => {
   let netTimer;
   const netSearch = document.getElementById('netSearch');
-  const netAcct = document.getElementById('netAccountFilter');
   const netOu = document.getElementById('netOuFilter');
   const netSvcSel = document.getElementById('netSvcFilter');
   if (netSearch) netSearch.addEventListener('input', () => { clearTimeout(netTimer); netTimer = setTimeout(loadNetwork, 500); });
-  if (netAcct) netAcct.addEventListener('input', () => { clearTimeout(netTimer); netTimer = setTimeout(loadNetwork, 500); });
   if (netOu) netOu.addEventListener('input', () => { clearTimeout(netTimer); netTimer = setTimeout(loadNetwork, 500); });
   if (netSvcSel) netSvcSel.addEventListener('change', () => { netSvcOnly = netSvcSel.value === 'svc'; loadNetwork(); });
   const netTierSel = document.getElementById('netTierFilter');
   if (netTierSel) netTierSel.addEventListener('change', () => { netTierFilter = netTierSel.value; loadNetwork(); });
+  const netOwnerSel = document.getElementById('netOwnerFilter');
+  if (netOwnerSel) netOwnerSel.addEventListener('change', () => { netOwnerFilter = netOwnerSel.value; loadNetwork(); });
   const netRefresh = document.getElementById('netRefreshBtn');
   if (netRefresh) netRefresh.addEventListener('click', loadNetwork);
 });
@@ -1210,6 +1218,16 @@ function populateTierFilters() {
   });
 }
 
+function populateOwnerFilters() {
+  ['compOwnerFilter', 'acctOwnerFilter', 'netOwnerFilter'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All Owners</option>' +
+      owners.map(o => `<option value="${esc(o)}"${current === o ? ' selected' : ''}>${esc(o)}</option>`).join('');
+  });
+}
+
 function setupTierLevels() {
   const addBtn = document.getElementById('tierLevelAddBtn');
   const input = document.getElementById('tierLevelInput');
@@ -1271,6 +1289,7 @@ async function loadOwners() {
     const list = await r.json();
     if (Array.isArray(list)) owners = list;
     renderOwners();
+    populateOwnerFilters();
   } catch (err) {
     console.error('Failed to load owners:', err);
   }
@@ -1318,6 +1337,7 @@ async function saveOwners(ownersList) {
     if (result.error) { toast(result.error, 'error'); return; }
     owners = result.owners;
     renderOwners();
+    populateOwnerFilters();
     toast('Owners updated');
   } catch (err) {
     toast('Failed to save owners: ' + err.message, 'error');

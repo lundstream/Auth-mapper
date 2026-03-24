@@ -90,11 +90,12 @@ app.get('/api/dashboard', (req, res) => {
 // Computers list
 app.get('/api/computers', (req, res) => {
   try {
-    const { q, ou, tier, sort, dir, page, limit, svcOnly } = req.query;
+    const { q, ou, tier, owner, sort, dir, page, limit, svcOnly } = req.query;
     res.json(db.getComputers({
       search: q || '',
       ouFilter: ou || '',
       tierFilter: tier || '',
+      ownerFilter: owner || '',
       sort: sort || 'name',
       dir: dir || 'ASC',
       page: parseInt(page) || 1,
@@ -121,10 +122,11 @@ app.get('/api/computers/:name', (req, res) => {
 // Accounts list
 app.get('/api/accounts', (req, res) => {
   try {
-    const { q, tier, sort, dir, page, limit, svcOnly } = req.query;
+    const { q, tier, owner, sort, dir, page, limit, svcOnly } = req.query;
     res.json(db.getAccounts({
       search: q || '',
       tierFilter: tier || '',
+      ownerFilter: owner || '',
       sort: sort || 'name',
       dir: dir || 'ASC',
       page: parseInt(page) || 1,
@@ -151,12 +153,12 @@ app.get('/api/accounts/:name', (req, res) => {
 // Network graph data
 app.get('/api/network', (req, res) => {
   try {
-    const { q, account, ou, tier, svcOnly } = req.query;
+    const { q, ou, tier, owner, svcOnly } = req.query;
     res.json(db.getNetworkData({
       search: q || '',
-      accountFilter: account || '',
       ouFilter: ou || '',
       tierFilter: tier || '',
+      ownerFilter: owner || '',
       svcOnly: svcOnly === '1',
       svcPatterns: settings.svcPatterns || ['svc', 'service']
     }));
