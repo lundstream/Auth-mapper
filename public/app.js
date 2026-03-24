@@ -3,7 +3,7 @@
 /* ── State ─────────────────────────────────────────────────────────────── */
 let charts = {};
 let compSort = 'name', compDir = 'ASC', compPage = 1, compSearch = '', compOuFilter = '';
-let acctSort = 'name', acctDir = 'ASC', acctPage = 1, acctSearch = '';
+let acctSort = 'name', acctDir = 'ASC', acctPage = 1, acctSearch = '', acctOuFilter = '';
 let networkData = null;
 
 // Network graph state
@@ -90,6 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadTierLevels();
   loadOwners();
   loadDashboard();
+  populateOuFilters();
 });
 
 /* ── Theme ─────────────────────────────────────────────────────────────── */
@@ -554,6 +555,7 @@ async function loadAccounts() {
     page: acctPage, limit: 100, sort: acctSort, dir: acctDir
   });
   if (acctSearch) params.set('q', wildcardToLike(acctSearch));
+  if (acctOuFilter) params.set('ou', wildcardToLike(acctOuFilter));
   if (acctSvcOnly) params.set('svcOnly', '1');
   if (acctTierFilter) params.set('tier', acctTierFilter);
   if (acctOwnerFilter) params.set('owner', acctOwnerFilter);
@@ -713,6 +715,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (el) el.addEventListener('input', () => {
     clearTimeout(acctSearchTimer);
     acctSearchTimer = setTimeout(() => { acctSearch = el.value.trim(); acctPage = 1; loadAccounts(); }, 300);
+  });
+  const acctOuEl = document.getElementById('acctOuFilter');
+  if (acctOuEl) acctOuEl.addEventListener('input', () => {
+    clearTimeout(acctSearchTimer);
+    acctSearchTimer = setTimeout(() => { acctOuFilter = acctOuEl.value.trim(); acctPage = 1; loadAccounts(); }, 300);
   });
   const acctSvcSel = document.getElementById('acctSvcFilter');
   if (acctSvcSel) acctSvcSel.addEventListener('change', () => { acctSvcOnly = acctSvcSel.value === 'svc'; acctPage = 1; loadAccounts(); });
@@ -1047,6 +1054,7 @@ function setupImport() {
       toast(`Imported ${result.computers} computers, ${result.accounts} accounts, ${result.mappings} mappings`);
       loadImportHistory();
       loadDashboard();
+      populateOuFilters();
     } catch (err) {
       toast('Import failed: ' + err.message, 'error');
     }
@@ -1060,6 +1068,7 @@ function setupImport() {
       toast('All data purged');
       loadImportHistory();
       loadDashboard();
+      populateOuFilters();
     } catch (err) {
       toast('Purge failed', 'error');
     }
@@ -1080,6 +1089,7 @@ async function importFile(file) {
     toast(`Imported ${result.computers} computers, ${result.accounts} accounts, ${result.mappings} mappings`);
     loadImportHistory();
     loadDashboard();
+    populateOuFilters();
   } catch (err) {
     toast('Import failed: ' + err.message, 'error');
   }
@@ -1127,6 +1137,7 @@ function setupExport() {
   document.getElementById('acctExportBtn').addEventListener('click', () => {
     const params = new URLSearchParams();
     if (acctSearch) params.set('q', wildcardToLike(acctSearch));
+    if (acctOuFilter) params.set('ou', wildcardToLike(acctOuFilter));
     downloadExport('accounts', params);
   });
 }
@@ -1226,6 +1237,17 @@ function populateOwnerFilters() {
     sel.innerHTML = '<option value="">All Owners</option>' +
       owners.map(o => `<option value="${esc(o)}"${current === o ? ' selected' : ''}>${esc(o)}</option>`).join('');
   });
+}
+
+async function populateOuFilters() {
+  try {
+    const r = await fetch('/api/ous');
+    const ous = await r.json();
+    const dl = document.getElementById('ouList');
+    if (dl) dl.innerHTML = ous.map(o => `<option value="${esc(o)}">`).join('');
+  } catch (err) {
+    console.error('Failed to load OUs:', err);
+  }
 }
 
 function setupTierLevels() {

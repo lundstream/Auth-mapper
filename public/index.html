@@ -383,7 +383,7 @@ body.modal-open { overflow: hidden; }
         <h2>Computers / Servers</h2>
         <div class="panel-actions">
           <input type="text" class="search-input" id="compSearch" placeholder="Filter by computer name or IP">
-          <input type="text" class="search-input" id="compOuFilter" placeholder="Filter by OU" style="width:200px;">
+          <input type="text" class="search-input" id="compOuFilter" placeholder="Filter by OU" style="width:200px;" list="ouList">
           <select class="search-input" id="compTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
           </select>
@@ -426,6 +426,7 @@ body.modal-open { overflow: hidden; }
         <h2>Accounts</h2>
         <div class="panel-actions">
           <input type="text" class="search-input" id="acctSearch" placeholder="Filter by account name">
+          <input type="text" class="search-input" id="acctOuFilter" placeholder="Filter by OU" style="width:200px;" list="ouList">
           <select class="search-input" id="acctTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
           </select>
@@ -467,7 +468,8 @@ body.modal-open { overflow: hidden; }
         <h2>Authentication Network Map</h2>
         <div class="panel-actions">
           <input type="text" class="search-input" id="netSearch" placeholder="Filter by computer or account name">
-          <input type="text" class="search-input" id="netOuFilter" placeholder="Filter by OU" style="width:200px;">
+          <input type="text" class="search-input" id="netOuFilter" placeholder="Filter by OU" style="width:200px;" list="ouList">
+          <datalist id="ouList"></datalist>
           <select class="search-input" id="netTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
           </select>

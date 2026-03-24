@@ -122,9 +122,10 @@ app.get('/api/computers/:name', (req, res) => {
 // Accounts list
 app.get('/api/accounts', (req, res) => {
   try {
-    const { q, tier, owner, sort, dir, page, limit, svcOnly } = req.query;
+    const { q, ou, tier, owner, sort, dir, page, limit, svcOnly } = req.query;
     res.json(db.getAccounts({
       search: q || '',
+      ouFilter: ou || '',
       tierFilter: tier || '',
       ownerFilter: owner || '',
       sort: sort || 'name',
@@ -227,6 +228,15 @@ app.post('/api/purge', (req, res) => {
 // SVC patterns
 app.get('/api/settings/svc-patterns', (req, res) => {
   res.json(settings.svcPatterns || ['svc', 'service']);
+});
+
+// Distinct OUs for autocomplete
+app.get('/api/ous', (req, res) => {
+  try {
+    res.json(db.getDistinctOUs());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.put('/api/settings/svc-patterns', (req, res) => {

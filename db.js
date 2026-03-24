@@ -428,7 +428,7 @@ function getComputerDetail(name) {
   return { ...computer, ips, accounts };
 }
 
-function getAccounts({ search, tierFilter, ownerFilter, sort, dir, page, limit, svcOnly, svcPatterns }) {
+function getAccounts({ search, ouFilter, tierFilter, ownerFilter, sort, dir, page, limit, svcOnly, svcPatterns }) {
   const db = getDb();
   const conditions = [];
   const params = [];
@@ -436,6 +436,10 @@ function getAccounts({ search, tierFilter, ownerFilter, sort, dir, page, limit, 
   if (search) {
     conditions.push(`a.name LIKE ?`);
     params.push(`%${search}%`);
+  }
+  if (ouFilter) {
+    conditions.push(`a.id IN (SELECT am.account_id FROM auth_mappings am JOIN computers cc ON cc.id = am.computer_id WHERE cc.ou LIKE ?)`);
+    params.push(`%${ouFilter}%`);
   }
   if (tierFilter) {
     conditions.push(`a.tier = ?`);
@@ -884,6 +888,11 @@ function deleteCoverageSnapshot(id) {
   return result.changes > 0;
 }
 
+function getDistinctOUs() {
+  const db = getDb();
+  return db.prepare(`SELECT DISTINCT ou FROM computers WHERE ou != '' ORDER BY ou`).all().map(r => r.ou);
+}
+
 module.exports = {
   getDb,
   importData,
@@ -906,5 +915,6 @@ module.exports = {
   importCoverage,
   getCoverageData,
   getCoverageSnapshots,
-  deleteCoverageSnapshot
+  deleteCoverageSnapshot,
+  getDistinctOUs
 };
