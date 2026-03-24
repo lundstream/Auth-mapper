@@ -382,17 +382,17 @@ body.modal-open { overflow: hidden; }
       <div class="panel-header">
         <h2>Computers / Servers</h2>
         <div class="panel-actions">
-          <input type="text" class="search-input" id="compSearch" placeholder="Filter by name or IP (e.g. SERVER*, 10.0.*)">
-          <input type="text" class="search-input" id="compOuFilter" placeholder="Filter by OU (e.g. OU=Servers*)" style="width:200px;">
+          <input type="text" class="search-input" id="compSearch" placeholder="Filter by computer name or IP">
+          <input type="text" class="search-input" id="compOuFilter" placeholder="Filter by OU" style="width:200px;">
           <select class="search-input" id="compTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
           </select>
           <select class="search-input" id="compOwnerFilter" style="width:150px;">
             <option value="">All Owners</option>
           </select>
-          <select class="search-input" id="compSvcFilter" style="width:220px;">
+          <select class="search-input" id="compSvcFilter" style="width:170px;">
             <option value="all">All Computers</option>
-            <option value="svc">With Service Accounts Only</option>
+            <option value="svc">Service Accounts Only</option>
           </select>
           <button class="btn btn-outline btn-sm" id="compExportBtn"><i data-feather="download" style="width:14px;height:14px"></i> CSV</button>
         </div>
@@ -425,7 +425,7 @@ body.modal-open { overflow: hidden; }
       <div class="panel-header">
         <h2>Accounts</h2>
         <div class="panel-actions">
-          <input type="text" class="search-input" id="acctSearch" placeholder="Filter accounts (e.g. svc*, admin*)">
+          <input type="text" class="search-input" id="acctSearch" placeholder="Filter by account name">
           <select class="search-input" id="acctTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
           </select>
