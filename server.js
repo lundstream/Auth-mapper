@@ -370,6 +370,69 @@ app.post('/api/restore', (req, res) => {
   }
 });
 
+// Coverage / Gap Analysis
+app.post('/api/coverage/import', (req, res) => {
+  try {
+    const jsonData = req.body;
+    if (!jsonData || jsonData._type !== 'ad_coverage') {
+      return res.status(400).json({ error: 'Invalid format. Expected AD coverage JSON with _type: "ad_coverage"' });
+    }
+    const result = db.importCoverage(jsonData);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('Coverage import error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/coverage/import/file', (req, res) => {
+  try {
+    const { filePath: fp } = req.body;
+    if (!fp) return res.status(400).json({ error: 'filePath required' });
+    const resolved = path.resolve(fp);
+    if (!fs.existsSync(resolved)) return res.status(404).json({ error: 'File not found' });
+    const raw = fs.readFileSync(resolved, 'utf8');
+    const jsonData = JSON.parse(raw);
+    if (!jsonData || jsonData._type !== 'ad_coverage') {
+      return res.status(400).json({ error: 'Invalid format. Expected AD coverage JSON with _type: "ad_coverage"' });
+    }
+    const result = db.importCoverage(jsonData);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('Coverage file import error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/coverage', (req, res) => {
+  try {
+    const data = db.getCoverageData();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/coverage/snapshots', (req, res) => {
+  try {
+    res.json(db.getCoverageSnapshots());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/coverage/snapshots/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: 'Invalid snapshot ID' });
+    const ok = db.deleteCoverageSnapshot(id);
+    if (!ok) return res.status(404).json({ error: 'Snapshot not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── Start ─────────────────────────────────────────────────────────────── */
 
 app.listen(PORT, () => {

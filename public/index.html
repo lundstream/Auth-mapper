@@ -324,6 +324,7 @@ body.modal-open { overflow: hidden; }
     <button class="tab-btn" data-tab="computers">Computers</button>
     <button class="tab-btn" data-tab="accounts">Accounts</button>
     <button class="tab-btn" data-tab="network">Network Map</button>
+    <button class="tab-btn" data-tab="coverage">Coverage</button>
     <button class="tab-btn" data-tab="import">Import &amp; Export</button>
     <button class="tab-btn" data-tab="settings">Settings</button>
   </div>
@@ -479,6 +480,97 @@ body.modal-open { overflow: hidden; }
           <span style="font-size:12px;color:var(--text3);">Drag to pan &middot; Scroll to zoom &middot; Click node for details</span>
         </div>
         <canvas id="networkCanvas"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- Coverage Tab -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <div class="tab-panel" id="tab-coverage">
+    <div class="import-zone" id="coverageImportZone" style="margin-bottom:20px;">
+      <i data-feather="shield" style="width:48px;height:48px;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;"></i>
+      <h3 style="margin-bottom:8px;">Import AD Coverage Snapshot</h3>
+      <p style="margin-bottom:16px;">Import a JSON file from the <code>Collect-ADCoverage.ps1</code> script to compare against authentication data.</p>
+      <input type="file" id="coverageFile" accept=".json" style="display:none;">
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="coverageBrowseBtn">Browse File</button>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:12px;align-items:center;max-width:500px;margin-left:auto;margin-right:auto;">
+        <input type="text" class="search-input" id="coveragePathInput" placeholder="Or enter server path..." style="flex:1;">
+        <button class="btn btn-outline btn-sm" id="coveragePathBtn">Import Path</button>
+      </div>
+    </div>
+
+    <div id="coverageContent" style="display:none;">
+      <div class="stats-grid" id="coverageStats"></div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2 id="covCompTitle">Missing Computers</h2>
+          <div class="panel-actions">
+            <input type="text" class="search-input" id="covCompSearch" placeholder="Filter missing computers...">
+            <select class="search-input" id="covCompFilter" style="width:160px;">
+              <option value="missing">Missing Only</option>
+              <option value="seen">Seen Only</option>
+              <option value="all">All AD Computers</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-scroll" style="max-height:500px;">
+          <table class="data-table" id="covCompTable">
+            <thead>
+              <tr>
+                <th>Computer Name</th>
+                <th>OU</th>
+                <th>Operating System</th>
+                <th>Created</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="covCompBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2 id="covAcctTitle">Missing Accounts</h2>
+          <div class="panel-actions">
+            <input type="text" class="search-input" id="covAcctSearch" placeholder="Filter missing accounts...">
+            <select class="search-input" id="covAcctFilter" style="width:160px;">
+              <option value="missing">Missing Only</option>
+              <option value="seen">Seen Only</option>
+              <option value="all">All AD Accounts</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-scroll" style="max-height:500px;">
+          <table class="data-table" id="covAcctTable">
+            <thead>
+              <tr>
+                <th>Account Name</th>
+                <th>OU</th>
+                <th>SPN</th>
+                <th>Created</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="covAcctBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Snapshot History</h2>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th>Date</th><th>Domain</th><th>Server</th><th>Computers</th><th>Accounts</th><th></th></tr></thead>
+            <tbody id="covSnapshotBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>

@@ -82,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSvcPatterns();
   setupTierLevels();
   setupOwners();
+  setupCoverage();
   loadSvcPatterns();
   loadTierLevels();
   loadOwners();
@@ -116,6 +117,7 @@ function setupTabs() {
       else if (btn.dataset.tab === 'accounts') loadAccounts();
       else if (btn.dataset.tab === 'network') loadNetwork();
       else if (btn.dataset.tab === 'import') loadImportHistory();
+      else if (btn.dataset.tab === 'coverage') loadCoverage();
       else if (btn.dataset.tab === 'settings') { /* settings are loaded on init */ }
     });
   });
@@ -443,7 +445,6 @@ async function openComputerDetail(name) {
             ${owners.map(o => `<option value="${esc(o)}"${data.owner === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}
           </select>
         </div></div>
-        <div class="detail-item"><div class="dl">Accounts</div><div class="dv">${data.accounts.length}</div></div>
       </div>
       <h3 style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;">
         Authenticated Accounts (${data.accounts.length})
@@ -621,7 +622,6 @@ async function openAccountDetail(name) {
             ${owners.map(o => `<option value="${esc(o)}"${data.owner === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}
           </select>
         </div></div>
-        <div class="detail-item"><div class="dl">Auth Mappings</div><div class="dv">${data.computers.length}</div></div>
       </div>
       <h3 style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;">
         Computers Where This Account Authenticated (${data.computers.length})
@@ -1321,5 +1321,292 @@ async function saveOwners(ownersList) {
     toast('Owners updated');
   } catch (err) {
     toast('Failed to save owners: ' + err.message, 'error');
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── COVERAGE / GAP ANALYSIS ─────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+let coverageData = null;
+
+function setupCoverage() {
+  const fileInput = document.getElementById('coverageFile');
+  const browseBtn = document.getElementById('coverageBrowseBtn');
+  const pathBtn = document.getElementById('coveragePathBtn');
+  const zone = document.getElementById('coverageImportZone');
+
+  if (browseBtn) browseBtn.addEventListener('click', () => fileInput.click());
+
+  if (fileInput) fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      await importCoverageData(json);
+    } catch (err) {
+      toast('Failed to read file: ' + err.message, 'error');
+    }
+    fileInput.value = '';
+  });
+
+  if (pathBtn) pathBtn.addEventListener('click', async () => {
+    const input = document.getElementById('coveragePathInput');
+    const fp = input.value.trim();
+    if (!fp) return;
+    try {
+      const r = await fetch('/api/coverage/import/file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath: fp })
+      });
+      const result = await r.json();
+      if (!r.ok || result.error) { toast(result.error || 'Import failed', 'error'); return; }
+      toast(`Imported ${result.computers} computers, ${result.accounts} accounts`);
+      input.value = '';
+      loadCoverage();
+    } catch (err) {
+      toast('Import failed: ' + err.message, 'error');
+    }
+  });
+
+  // Drag & drop
+  if (zone) {
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const json = JSON.parse(text);
+        await importCoverageData(json);
+      } catch (err) {
+        toast('Failed to read file: ' + err.message, 'error');
+      }
+    });
+  }
+
+  // Filters
+  const compSearch = document.getElementById('covCompSearch');
+  const compFilter = document.getElementById('covCompFilter');
+  const acctSearch = document.getElementById('covAcctSearch');
+  const acctFilter = document.getElementById('covAcctFilter');
+
+  if (compSearch) compSearch.addEventListener('input', () => renderCoverageComputers());
+  if (compFilter) compFilter.addEventListener('change', () => renderCoverageComputers());
+  if (acctSearch) acctSearch.addEventListener('input', () => renderCoverageAccounts());
+  if (acctFilter) acctFilter.addEventListener('change', () => renderCoverageAccounts());
+}
+
+async function importCoverageData(json) {
+  try {
+    const r = await fetch('/api/coverage/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(json)
+    });
+    const result = await r.json();
+    if (!r.ok || result.error) { toast(result.error || 'Import failed', 'error'); return; }
+    toast(`Imported ${result.computers} computers, ${result.accounts} accounts`);
+    loadCoverage();
+  } catch (err) {
+    toast('Import failed: ' + err.message, 'error');
+  }
+}
+
+async function loadCoverage() {
+  try {
+    const r = await fetch('/api/coverage');
+    const data = await r.json();
+    coverageData = data;
+
+    const content = document.getElementById('coverageContent');
+    if (!data) {
+      content.style.display = 'none';
+      return;
+    }
+
+    content.style.display = '';
+    renderCoverageStats();
+    renderCoverageComputers();
+    renderCoverageAccounts();
+    loadCoverageSnapshots();
+  } catch (err) {
+    console.error('Coverage load error:', err);
+  }
+}
+
+function renderCoverageStats() {
+  const d = coverageData;
+  if (!d) return;
+  const el = document.getElementById('coverageStats');
+
+  const compPct = d.computers.ad_total > 0 ? Math.round((d.computers.seen / d.computers.ad_total) * 100) : 0;
+  const acctPct = d.accounts.ad_total > 0 ? Math.round((d.accounts.seen / d.accounts.ad_total) * 100) : 0;
+
+  el.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-value">${d.computers.ad_total}</div>
+      <div class="stat-label">AD Computers</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:var(--success);">${d.computers.seen}</div>
+      <div class="stat-label">Seen in Auth Logs</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:var(--danger);">${d.computers.missing}</div>
+      <div class="stat-label">Missing Computers</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${compPct}%</div>
+      <div class="stat-label">Computer Coverage</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${d.accounts.ad_total}</div>
+      <div class="stat-label">AD Accounts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:var(--success);">${d.accounts.seen}</div>
+      <div class="stat-label">Seen in Auth Logs</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:var(--danger);">${d.accounts.missing}</div>
+      <div class="stat-label">Missing Accounts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${acctPct}%</div>
+      <div class="stat-label">Account Coverage</div>
+    </div>
+  `;
+}
+
+function renderCoverageComputers() {
+  if (!coverageData) return;
+  const search = (document.getElementById('covCompSearch')?.value || '').trim().toLowerCase();
+  const filter = document.getElementById('covCompFilter')?.value || 'missing';
+  const body = document.getElementById('covCompBody');
+  const title = document.getElementById('covCompTitle');
+
+  // Build full list with status
+  const allAd = coverageData.computers.missing_list.map(c => ({ ...c, _status: 'missing' }));
+  // For "seen" and "all", we need the seen list too – reconstruct from ad_total - missing
+  const missingNames = new Set(coverageData.computers.missing_list.map(c => c.name.toUpperCase()));
+
+  let items;
+  if (filter === 'missing') {
+    items = allAd;
+    title.textContent = `Missing Computers (${coverageData.computers.missing})`;
+  } else if (filter === 'seen') {
+    // We don't have the full seen list from API since it would be large; show a message
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px;">Seen computers are already visible in the Computers tab.</td></tr>';
+    title.textContent = `Seen Computers (${coverageData.computers.seen})`;
+    return;
+  } else {
+    // 'all' – show missing list with status, note about seen
+    items = allAd;
+    title.textContent = `All AD Computers (${coverageData.computers.ad_total} total, ${coverageData.computers.missing} missing)`;
+  }
+
+  let filtered = items;
+  if (search) {
+    filtered = items.filter(c => c.name.toLowerCase().includes(search) || (c.ou || '').toLowerCase().includes(search) || (c.os || '').toLowerCase().includes(search));
+  }
+
+  if (filtered.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px;">No missing computers found. Full coverage!</td></tr>';
+    return;
+  }
+
+  body.innerHTML = filtered.map(c => `
+    <tr>
+      <td><strong>${esc(c.name)}</strong></td>
+      <td style="font-size:11px;color:var(--text3);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.ou)}">${esc(c.ou || '-')}</td>
+      <td style="font-size:12px;">${esc(c.os || '-')}</td>
+      <td style="font-size:12px;color:var(--text2);">${c.created ? fmtDate(c.created) : '-'}</td>
+      <td><span class="badge badge-red">Missing</span></td>
+    </tr>
+  `).join('');
+}
+
+function renderCoverageAccounts() {
+  if (!coverageData) return;
+  const search = (document.getElementById('covAcctSearch')?.value || '').trim().toLowerCase();
+  const filter = document.getElementById('covAcctFilter')?.value || 'missing';
+  const body = document.getElementById('covAcctBody');
+  const title = document.getElementById('covAcctTitle');
+
+  const allAd = coverageData.accounts.missing_list.map(a => ({ ...a, _status: 'missing' }));
+
+  let items;
+  if (filter === 'missing') {
+    items = allAd;
+    title.textContent = `Missing Accounts (${coverageData.accounts.missing})`;
+  } else if (filter === 'seen') {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px;">Seen accounts are already visible in the Accounts tab.</td></tr>';
+    title.textContent = `Seen Accounts (${coverageData.accounts.seen})`;
+    return;
+  } else {
+    items = allAd;
+    title.textContent = `All AD Accounts (${coverageData.accounts.ad_total} total, ${coverageData.accounts.missing} missing)`;
+  }
+
+  let filtered = items;
+  if (search) {
+    filtered = items.filter(a => a.name.toLowerCase().includes(search) || (a.ou || '').toLowerCase().includes(search));
+  }
+
+  if (filtered.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px;">No missing accounts found. Full coverage!</td></tr>';
+    return;
+  }
+
+  body.innerHTML = filtered.map(a => `
+    <tr>
+      <td><strong>${esc(a.name)}</strong></td>
+      <td style="font-size:11px;color:var(--text3);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(a.ou)}">${esc(a.ou || '-')}</td>
+      <td>${a.has_spn ? '<span class="badge badge-yellow">SPN</span>' : '-'}</td>
+      <td style="font-size:12px;color:var(--text2);">${a.created ? fmtDate(a.created) : '-'}</td>
+      <td><span class="badge badge-red">Missing</span></td>
+    </tr>
+  `).join('');
+}
+
+async function loadCoverageSnapshots() {
+  try {
+    const r = await fetch('/api/coverage/snapshots');
+    const snapshots = await r.json();
+    const body = document.getElementById('covSnapshotBody');
+    if (!Array.isArray(snapshots) || snapshots.length === 0) {
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:20px;">No snapshots yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = snapshots.map(s => `
+      <tr>
+        <td style="font-size:12px;color:var(--text2);">${fmtDate(s.imported_at)}</td>
+        <td>${esc(s.domain || '-')}</td>
+        <td>${esc(s.server || '-')}</td>
+        <td>${s.computers_count}</td>
+        <td>${s.accounts_count}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteCoverageSnapshot(${s.id})">Delete</button></td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    console.error('Failed to load coverage snapshots:', err);
+  }
+}
+
+async function deleteCoverageSnapshot(id) {
+  if (!confirm('Delete this coverage snapshot?')) return;
+  try {
+    const r = await fetch('/api/coverage/snapshots/' + id, { method: 'DELETE' });
+    if (!r.ok) { toast('Failed to delete snapshot', 'error'); return; }
+    toast('Snapshot deleted');
+    loadCoverage();
+  } catch (err) {
+    toast('Failed: ' + err.message, 'error');
   }
 }

@@ -112,6 +112,44 @@ function initSchema() {
   } catch {
     db.exec(`ALTER TABLE accounts ADD COLUMN owner TEXT DEFAULT ''`);
   }
+
+  // Coverage snapshot tables
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS coverage_snapshots (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      imported_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      domain       TEXT DEFAULT '',
+      server       TEXT DEFAULT '',
+      search_base  TEXT DEFAULT '',
+      include_disabled INTEGER DEFAULT 0,
+      computers_count  INTEGER DEFAULT 0,
+      accounts_count   INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS coverage_computers (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      snapshot_id INTEGER NOT NULL REFERENCES coverage_snapshots(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL COLLATE NOCASE,
+      ou          TEXT DEFAULT '',
+      os          TEXT DEFAULT '',
+      created     TEXT DEFAULT '',
+      enabled     INTEGER DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_cov_comp_snapshot ON coverage_computers(snapshot_id);
+    CREATE INDEX IF NOT EXISTS idx_cov_comp_name ON coverage_computers(name);
+
+    CREATE TABLE IF NOT EXISTS coverage_accounts (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      snapshot_id INTEGER NOT NULL REFERENCES coverage_snapshots(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL COLLATE NOCASE,
+      ou          TEXT DEFAULT '',
+      created     TEXT DEFAULT '',
+      enabled     INTEGER DEFAULT 1,
+      has_spn     INTEGER DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_cov_acct_snapshot ON coverage_accounts(snapshot_id);
+    CREATE INDEX IF NOT EXISTS idx_cov_acct_name ON coverage_accounts(name);
+  `);
 }
 
 /* ── Import ────────────────────────────────────────────────────────────── */
@@ -717,6 +755,127 @@ function restoreBackupData(data) {
   };
 }
 
+/* ── Coverage / Gap Analysis ──────────────────────────────────────────── */
+
+function importCoverage(jsonData) {
+  const db = getDb();
+
+  const insertSnapshot = db.prepare(`
+    INSERT INTO coverage_snapshots (domain, server, search_base, include_disabled, computers_count, accounts_count)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertComp = db.prepare(`
+    INSERT INTO coverage_computers (snapshot_id, name, ou, os, created, enabled) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertAcct = db.prepare(`
+    INSERT INTO coverage_accounts (snapshot_id, name, ou, created, enabled, has_spn) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  const doImport = db.transaction(() => {
+    const computers = Array.isArray(jsonData.computers) ? jsonData.computers : [];
+    const accounts = Array.isArray(jsonData.accounts) ? jsonData.accounts : [];
+
+    const info = insertSnapshot.run(
+      jsonData.domain || '',
+      jsonData.server || '',
+      jsonData.search_base || '',
+      jsonData.include_disabled ? 1 : 0,
+      computers.length,
+      accounts.length
+    );
+    const snapId = info.lastInsertRowid;
+
+    for (const c of computers) {
+      insertComp.run(snapId, String(c.name || '').toUpperCase(), c.ou || '', c.os || '', c.created || '', c.enabled ? 1 : 0);
+    }
+    for (const a of accounts) {
+      insertAcct.run(snapId, String(a.name || ''), a.ou || '', a.created || '', a.enabled ? 1 : 0, a.has_spn ? 1 : 0);
+    }
+
+    return { snapshot_id: Number(snapId), computers: computers.length, accounts: accounts.length };
+  });
+
+  return doImport();
+}
+
+function getCoverageData() {
+  const db = getDb();
+
+  // Get latest snapshot
+  const snapshot = db.prepare(`SELECT * FROM coverage_snapshots ORDER BY imported_at DESC LIMIT 1`).get();
+  if (!snapshot) return null;
+
+  // AD computers from snapshot
+  const adComputers = db.prepare(`SELECT name, ou, os, created, enabled FROM coverage_computers WHERE snapshot_id = ?`).all(snapshot.id);
+  // AD accounts from snapshot
+  const adAccounts = db.prepare(`SELECT name, ou, created, enabled, has_spn FROM coverage_accounts WHERE snapshot_id = ?`).all(snapshot.id);
+
+  // Imported computers (from auth data)
+  const importedComputers = db.prepare(`SELECT name FROM computers`).all().map(r => r.name.toUpperCase());
+  const importedComputerSet = new Set(importedComputers);
+
+  // Imported accounts (from auth data)
+  const importedAccounts = db.prepare(`SELECT name FROM accounts`).all().map(r => r.name.toUpperCase());
+  const importedAccountSet = new Set(importedAccounts);
+
+  // Classify
+  const compSeen = [];
+  const compMissing = [];
+  for (const c of adComputers) {
+    if (importedComputerSet.has(c.name.toUpperCase())) {
+      compSeen.push(c);
+    } else {
+      compMissing.push(c);
+    }
+  }
+
+  const acctSeen = [];
+  const acctMissing = [];
+  for (const a of adAccounts) {
+    if (importedAccountSet.has(a.name.toUpperCase())) {
+      acctSeen.push(a);
+    } else {
+      acctMissing.push(a);
+    }
+  }
+
+  return {
+    snapshot: {
+      id: snapshot.id,
+      imported_at: snapshot.imported_at,
+      domain: snapshot.domain,
+      server: snapshot.server,
+      search_base: snapshot.search_base,
+      include_disabled: !!snapshot.include_disabled
+    },
+    computers: {
+      ad_total: adComputers.length,
+      seen: compSeen.length,
+      missing: compMissing.length,
+      missing_list: compMissing
+    },
+    accounts: {
+      ad_total: adAccounts.length,
+      seen: acctSeen.length,
+      missing: acctMissing.length,
+      missing_list: acctMissing
+    }
+  };
+}
+
+function getCoverageSnapshots() {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM coverage_snapshots ORDER BY imported_at DESC`).all();
+}
+
+function deleteCoverageSnapshot(id) {
+  const db = getDb();
+  const result = db.prepare(`DELETE FROM coverage_snapshots WHERE id = ?`).run(id);
+  return result.changes > 0;
+}
+
 module.exports = {
   getDb,
   importData,
@@ -735,5 +894,9 @@ module.exports = {
   setComputerOwner,
   setAccountOwner,
   getBackupData,
-  restoreBackupData
+  restoreBackupData,
+  importCoverage,
+  getCoverageData,
+  getCoverageSnapshots,
+  deleteCoverageSnapshot
 };
