@@ -16,8 +16,8 @@ Visualize which accounts authenticate against which servers by collecting data f
 **Network Map** — Interactive force-directed graph showing which accounts connect to which servers.
 ![Network Map](screenshots/4.png)
 
-**Import & Export** — Drag-and-drop JSON import, CSV export, and service account pattern configuration.
-![Import & Export](screenshots/5.png)
+**Data & Settings** — Import, export, backup/restore, tier levels, and service account pattern configuration.
+![Data & Settings](screenshots/5.png)
 
 ## Features
 
@@ -26,13 +26,15 @@ Visualize which accounts authenticate against which servers by collecting data f
 - **Auth protocol detection** — Identifies actual authentication protocol (Kerberos or NTLM) per account via `LmPackageName`, displayed as color-coded badges in the UI
 - **gMSA support** — Group Managed Service Accounts are detected via AD query, cached locally, and tracked alongside regular accounts (not filtered out like machine accounts)
 - **UPN resolution** — One-time AD export of UPN→sAMAccountName mappings cached to `upn_cache.json`; auto-refreshes after 24h (configurable via `-UpnCacheHours`)
+- **Tier tagging** — Configurable tier levels (default T0/T1/T2) for classifying computers and accounts; Domain Controllers are auto-tagged T0 on import; manual tagging via detail modals; filterable on all views
 - **Web dashboard** — Dark-themed UI with stats, charts, filterable tables, network graph
-- **Computers tab** — List all computers/servers with IPs, OUs, and account counts; sortable and filterable
-- **Accounts tab** — All unique accounts with computer counts and auth type badges (Kerberos/NTLM); filter by pattern (e.g. `svc*`, `admin*`)
-- **Network map** — Interactive canvas-based graph showing account → computer authentication relationships; filter by OU, account, or service accounts only
+- **Computers tab** — List all computers/servers with IPs, OUs, tier badges, and account counts; sortable, filterable, and tier-filterable
+- **Accounts tab** — All unique accounts with computer counts, auth type badges (Kerberos/NTLM), and tier badges; filter by pattern (e.g. `svc*`, `admin*`) or tier
+- **Network map** — Interactive canvas-based graph showing account → computer authentication relationships; filter by OU, account, tier, or service accounts only
 - **Service account detection** — Configurable naming patterns (e.g. `svc`, `service`, `batch`) with "Service Accounts Only" filter on all views
 - **Import system** — Drag & drop JSON files, import from server path, supports multiple import runs with data merging
 - **CSV export** — Export computers, accounts, or full mappings to CSV; supports filtered exports
+- **Backup & restore** — Download a full JSON backup of all data (computers, accounts, mappings, IPs, tiers, import history) and settings; restore from backup replaces all data
 
 ## Quick Start
 
@@ -107,7 +109,7 @@ The app runs entirely on your local machine — no internet connection required 
 
 ### 3. Import Data
 
-- Go to **Import & Export** tab
+- Go to **Data & Settings** tab
 - Drag & drop the JSON file, or enter the file path and click Import
 - Import multiple files — data is merged (unique computers/accounts/mappings)
 
@@ -118,11 +120,15 @@ Copy `settings.example.json` to `settings.json` and adjust:
 ```json
 {
   "port": 3002,
-  "svcPatterns": ["svc", "service"]
+  "svcPatterns": ["svc", "service", "gmsa"],
+  "tierLevels": ["T0", "T1", "T2"]
 }
 ```
 
-`svcPatterns` — substrings used to identify service accounts (case-insensitive). Configurable from the web UI under Import & Export.
+- `svcPatterns` — substrings used to identify service accounts (case-insensitive)
+- `tierLevels` — tier classification levels for computers and accounts (DCs are auto-tagged T0)
+
+Both are configurable from the web UI under **Data & Settings**.
 
 ## Tech Stack
 
