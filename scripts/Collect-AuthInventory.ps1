@@ -133,7 +133,6 @@ $gmsaSet = [System.Collections.Generic.HashSet[string]]::new([System.StringCompa
 function Build-GmsaCache {
     param([string]$CachePath)
     Write-Host "[*] Building gMSA cache from AD..." -ForegroundColor Yellow
-    $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     try {
         $searcher = New-Object System.DirectoryServices.DirectorySearcher
         $searcher.Filter = '(objectClass=msDS-GroupManagedServiceAccount)'
@@ -142,16 +141,15 @@ function Build-GmsaCache {
         $results = $searcher.FindAll()
         foreach ($r in $results) {
             $sam = [string]$r.Properties['samaccountname'][0]
-            if ($sam) { $set.Add($sam) | Out-Null }
+            if ($sam) { $script:gmsaSet.Add($sam) | Out-Null }
         }
         $results.Dispose()
-        $cache = @{ generated_at = (Get-Date).ToString('o'); accounts = @($set) }
+        $cache = @{ generated_at = (Get-Date).ToString('o'); accounts = @($script:gmsaSet) }
         $cache | ConvertTo-Json -Depth 3 -Compress | Set-Content -Path $CachePath -Encoding UTF8
-        Write-Host "    Cached $($set.Count) gMSA accounts" -ForegroundColor Green
+        Write-Host "    Cached $($script:gmsaSet.Count) gMSA accounts" -ForegroundColor Green
     } catch {
         Write-Host "    Warning: Could not query AD for gMSA accounts: $($_.Exception.Message)" -ForegroundColor Yellow
     }
-    return $set
 }
 
 # Load or refresh the gMSA cache (shares TTL with UPN cache)
@@ -174,10 +172,7 @@ if (-not $gmsaNeedsRefresh -and (Test-Path $gmsaCachePath)) {
 }
 
 if ($gmsaNeedsRefresh) {
-    $gmsaSet = Build-GmsaCache -CachePath $gmsaCachePath
-}
-if (-not $gmsaSet) {
-    $gmsaSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    Build-GmsaCache -CachePath $gmsaCachePath
 }
 
 Write-Host "[*] Time range        : $($cutoff.ToString('yyyy-MM-dd HH:mm')) to $($startTime.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Yellow
