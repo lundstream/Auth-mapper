@@ -92,13 +92,20 @@ a:hover { text-decoration: underline; }
   font-size: 12px; font-weight: 500; color: var(--text2);
   text-transform: uppercase; letter-spacing: .5px;
 }
-.stat-card .stat-value { font-size: 28px; font-weight: 700; }
+.stat-card .stat-value { font-size: 28px; font-weight: 700; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .stat-card .stat-sub { font-size: 12px; color: var(--text3); }
 .stat-card.accent  { border-left: 3px solid var(--accent); }
 .stat-card.success { border-left: 3px solid var(--success); }
 .stat-card.warning { border-left: 3px solid var(--warning); }
 .stat-card.danger  { border-left: 3px solid var(--danger); }
 .stat-card.info    { border-left: 3px solid var(--info); }
+.stat-growth {
+  font-size: 13px; font-weight: 600; border-radius: 4px;
+  padding: 1px 6px; white-space: nowrap;
+}
+.stat-growth.growth-up   { color: var(--success); background: rgba(46,160,67,.12); }
+.stat-growth.growth-down { color: var(--danger);  background: rgba(248,81,73,.12); }
+.stat-growth.growth-flat { color: var(--text3);   background: rgba(128,128,128,.10); }
 
 /* ── Panel ─────────────────────────────────────────────────────────────── */
 .panel {

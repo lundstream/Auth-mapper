@@ -342,9 +342,58 @@ function getDashboardStats(svcPatterns) {
     ORDER BY MIN(acct_count)
   `).all();
 
+  // Average accounts per computer
+  const avgAcctsPerComp = totalComputers > 0
+    ? db.prepare(`SELECT AVG(acct_count) as avg FROM (SELECT COUNT(DISTINCT m.account_id) as acct_count FROM computers c JOIN auth_mappings m ON m.computer_id = c.id GROUP BY c.id)`).get().avg || 0
+    : 0;
+
+  // Growth since last import
+  const lastTwo = db.prepare(`SELECT * FROM import_runs ORDER BY imported_at DESC LIMIT 2`).all();
+  let growth = null;
+  if (lastTwo.length >= 2) {
+    growth = {
+      computers: lastTwo[0].computers_count - lastTwo[1].computers_count,
+      accounts: lastTwo[0].accounts_count - lastTwo[1].accounts_count,
+      mappings: lastTwo[0].mappings_count - lastTwo[1].mappings_count
+    };
+  } else if (lastTwo.length === 1) {
+    growth = {
+      computers: lastTwo[0].computers_count,
+      accounts: lastTwo[0].accounts_count,
+      mappings: lastTwo[0].mappings_count
+    };
+  }
+
+  // Tier distribution
+  const compTiers = db.prepare(`SELECT COALESCE(tier, '') as tier, COUNT(*) as cnt FROM computers GROUP BY COALESCE(tier, '')`).all();
+  const acctTiers = db.prepare(`SELECT COALESCE(tier, '') as tier, COUNT(*) as cnt FROM accounts GROUP BY COALESCE(tier, '')`).all();
+  const tierStats = { computers: {}, accounts: {} };
+  for (const r of compTiers) tierStats.computers[r.tier || 'unassigned'] = r.cnt;
+  for (const r of acctTiers) tierStats.accounts[r.tier || 'unassigned'] = r.cnt;
+
+  // Owner assignment
+  const compOwned = db.prepare(`SELECT COUNT(*) as cnt FROM computers WHERE owner IS NOT NULL AND owner != ''`).get().cnt;
+  const acctOwned = db.prepare(`SELECT COUNT(*) as cnt FROM accounts WHERE owner IS NOT NULL AND owner != ''`).get().cnt;
+
+  // Auth type breakdown
+  const authRows = db.prepare(`SELECT auth_types FROM auth_mappings WHERE auth_types IS NOT NULL AND auth_types != ''`).all();
+  const authTypeCounts = {};
+  for (const row of authRows) {
+    for (const t of row.auth_types.split(',')) {
+      const key = t.trim();
+      if (key) authTypeCounts[key] = (authTypeCounts[key] || 0) + 1;
+    }
+  }
+
+  // Distinct OU count
+  const distinctOUs = db.prepare(`SELECT COUNT(DISTINCT ou) as cnt FROM computers WHERE ou != ''`).get().cnt;
+
   return {
     totalComputers, totalAccounts, totalMappings, totalImports, totalIps,
     svcAccounts, userAccounts: totalAccounts - svcAccounts,
+    avgAcctsPerComp: Math.round(avgAcctsPerComp * 10) / 10,
+    growth, tierStats, compOwned, acctOwned,
+    authTypeCounts, distinctOUs,
     topAccounts, topComputers, topOUs, recentImports, distribution
   };
 }

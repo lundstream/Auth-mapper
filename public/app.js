@@ -164,26 +164,80 @@ async function loadDashboard() {
 
 function renderDashStats(data) {
   const el = document.getElementById('dashStats');
+
+  // Growth badge helper
+  const growthBadge = (val) => {
+    if (val === null || val === undefined) return '';
+    const sign = val > 0 ? '+' : '';
+    const cls = val > 0 ? 'growth-up' : val < 0 ? 'growth-down' : 'growth-flat';
+    return `<span class="stat-growth ${cls}">${sign}${val}</span>`;
+  };
+
+  // Tier summary helper
+  const tierSummary = (tierObj, total) => {
+    const assigned = total - (tierObj['unassigned'] || 0) - (tierObj[''] || 0);
+    const pct = total > 0 ? Math.round(assigned / total * 100) : 0;
+    const parts = [];
+    for (const k of ['T0', 'T1', 'T2']) {
+      if (tierObj[k]) parts.push(`${k}: ${tierObj[k]}`);
+    }
+    return { pct, detail: parts.join(' · ') || 'none assigned' };
+  };
+
+  const compTier = tierSummary(data.tierStats?.computers || {}, data.totalComputers);
+  const acctTier = tierSummary(data.tierStats?.accounts || {}, data.totalAccounts);
+  const totalForOwner = data.totalComputers + data.totalAccounts;
+  const ownedTotal = (data.compOwned || 0) + (data.acctOwned || 0);
+  const ownerPct = totalForOwner > 0 ? Math.round(ownedTotal / totalForOwner * 100) : 0;
+
+  // Auth type summary
+  const authTypes = data.authTypeCounts || {};
+  const authParts = Object.entries(authTypes).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}: ${v}`);
+  const authTotal = Object.values(authTypes).reduce((s, v) => s + v, 0);
+
+  // Service account percentage
+  const svcPct = data.totalAccounts > 0 ? Math.round(data.svcAccounts / data.totalAccounts * 100) : 0;
+
   el.innerHTML = `
     <div class="stat-card accent">
-      <div class="stat-label">Total Computers</div>
-      <div class="stat-value">${data.totalComputers}</div>
-      <div class="stat-sub">${data.totalIps} unique IPs</div>
+      <div class="stat-label">Computers</div>
+      <div class="stat-value">${data.totalComputers} ${data.growth ? growthBadge(data.growth.computers) : ''}</div>
+      <div class="stat-sub">${data.totalIps} unique IPs · ${data.distinctOUs || 0} OUs</div>
     </div>
     <div class="stat-card success">
-      <div class="stat-label">Total Accounts</div>
-      <div class="stat-value">${data.totalAccounts}</div>
-      <div class="stat-sub">${data.svcAccounts} service accounts</div>
+      <div class="stat-label">Accounts</div>
+      <div class="stat-value">${data.totalAccounts} ${data.growth ? growthBadge(data.growth.accounts) : ''}</div>
+      <div class="stat-sub">${data.svcAccounts} service (${svcPct}%) · ${data.userAccounts} user</div>
     </div>
     <div class="stat-card warning">
       <div class="stat-label">Auth Mappings</div>
-      <div class="stat-value">${data.totalMappings}</div>
-      <div class="stat-sub">unique computer-account pairs</div>
+      <div class="stat-value">${data.totalMappings} ${data.growth ? growthBadge(data.growth.mappings) : ''}</div>
+      <div class="stat-sub">avg ${data.avgAcctsPerComp} accounts per computer</div>
     </div>
     <div class="stat-card info">
       <div class="stat-label">Imports</div>
       <div class="stat-value">${data.totalImports}</div>
-      <div class="stat-sub">data collection runs</div>
+      <div class="stat-sub">${data.growth ? 'growth since last import' : 'data collection runs'}</div>
+    </div>
+    <div class="stat-card accent">
+      <div class="stat-label">Tier Coverage</div>
+      <div class="stat-value">${compTier.pct}%</div>
+      <div class="stat-sub">Computers: ${compTier.detail}</div>
+    </div>
+    <div class="stat-card success">
+      <div class="stat-label">Tier Coverage (Accounts)</div>
+      <div class="stat-value">${acctTier.pct}%</div>
+      <div class="stat-sub">${acctTier.detail}</div>
+    </div>
+    <div class="stat-card warning">
+      <div class="stat-label">Owner Assigned</div>
+      <div class="stat-value">${ownerPct}%</div>
+      <div class="stat-sub">${data.compOwned || 0} computers · ${data.acctOwned || 0} accounts</div>
+    </div>
+    <div class="stat-card info">
+      <div class="stat-label">Auth Protocols</div>
+      <div class="stat-value">${authTotal}</div>
+      <div class="stat-sub">${authParts.join(' · ') || 'no data'}</div>
     </div>
   `;
 }

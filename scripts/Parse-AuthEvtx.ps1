@@ -481,7 +481,7 @@ foreach ($evtxFile in $evtxFiles) {
                     if ($lmPkg -like 'NTLM*') { $authType = 'NTLM' }
                     else { $authType = 'Kerberos' }
                 }
-                else { $authType = 'Negotiate' }
+                else { $authType = 'Kerberos' }
 
                 Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account -AuthType $authType
                 $fileCount4624++
