@@ -70,6 +70,7 @@ function initSchema() {
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       computer_id INTEGER NOT NULL REFERENCES computers(id) ON DELETE CASCADE,
       account_id  INTEGER NOT NULL REFERENCES accounts(id)  ON DELETE CASCADE,
+      auth_types  TEXT NOT NULL DEFAULT '',
       first_seen  TEXT NOT NULL DEFAULT (datetime('now')),
       last_seen   TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(computer_id, account_id)
@@ -78,6 +79,13 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_auth_computer ON auth_mappings(computer_id);
     CREATE INDEX IF NOT EXISTS idx_auth_account  ON auth_mappings(account_id);
   `);
+
+  // Migrate: add auth_types column if missing (existing databases)
+  try {
+    db.prepare(`SELECT auth_types FROM auth_mappings LIMIT 0`).get();
+  } catch {
+    db.exec(`ALTER TABLE auth_mappings ADD COLUMN auth_types TEXT NOT NULL DEFAULT ''`);
+  }
 }
 
 /* ── Import ────────────────────────────────────────────────────────────── */
@@ -109,8 +117,14 @@ function importData(jsonData, sourceFile) {
   const getAccountId = db.prepare(`SELECT id FROM accounts WHERE name = ? COLLATE NOCASE`);
 
   const upsertMapping = db.prepare(`
-    INSERT INTO auth_mappings (computer_id, account_id) VALUES (?, ?)
-    ON CONFLICT(computer_id, account_id) DO UPDATE SET last_seen = datetime('now')
+    INSERT INTO auth_mappings (computer_id, account_id, auth_types) VALUES (?, ?, ?)
+    ON CONFLICT(computer_id, account_id) DO UPDATE SET
+      last_seen = datetime('now'),
+      auth_types = CASE
+        WHEN excluded.auth_types = '' THEN auth_mappings.auth_types
+        WHEN auth_mappings.auth_types = '' THEN excluded.auth_types
+        ELSE auth_mappings.auth_types || ',' || excluded.auth_types
+      END
   `);
 
   let computersCount = 0;
@@ -140,14 +154,19 @@ function importData(jsonData, sourceFile) {
       // Accounts
       if (Array.isArray(comp.accounts)) {
         for (const acct of comp.accounts) {
-          const acctName = (acct || '').trim();
+          // Support both old format (string) and new format ({ name, auth_types })
+          const acctName = (typeof acct === 'string' ? acct : (acct && acct.name) || '').trim();
           if (!acctName) continue;
+
+          const authTypes = (typeof acct === 'object' && Array.isArray(acct.auth_types))
+            ? [...new Set(acct.auth_types)].sort().join(',')
+            : '';
 
           upsertAccount.run(acctName);
           const acctRow = getAccountId.get(acctName);
           if (!acctRow) continue;
 
-          upsertMapping.run(compId, acctRow.id);
+          upsertMapping.run(compId, acctRow.id, authTypes);
           accountSet.add(acctName.toUpperCase());
           mappingsCount++;
         }
@@ -168,6 +187,12 @@ function importData(jsonData, sourceFile) {
   doImport();
 
   return { computers: computersCount, accounts: accountSet.size, mappings: mappingsCount };
+}
+
+/** Parse a stored comma-separated auth_types string into a sorted, deduplicated array */
+function parseAuthTypes(str) {
+  if (!str) return [];
+  return [...new Set(str.split(',').map(s => s.trim()).filter(Boolean))].sort();
 }
 
 /* ── Queries ───────────────────────────────────────────────────────────── */
@@ -316,12 +341,12 @@ function getComputerDetail(name) {
   const ips = db.prepare(`SELECT ip FROM computer_ips WHERE computer_id = ?`).all(computer.id).map(r => r.ip);
 
   const accounts = db.prepare(`
-    SELECT a.name, m.first_seen, m.last_seen
+    SELECT a.name, m.first_seen, m.last_seen, m.auth_types
     FROM auth_mappings m
     JOIN accounts a ON a.id = m.account_id
     WHERE m.computer_id = ?
     ORDER BY a.name
-  `).all(computer.id);
+  `).all(computer.id).map(a => ({ ...a, auth_types: parseAuthTypes(a.auth_types) }));
 
   return { ...computer, ips, accounts };
 }
@@ -373,7 +398,7 @@ function getAccountDetail(name) {
   if (!account) return null;
 
   const computers = db.prepare(`
-    SELECT c.name, c.ou, m.first_seen, m.last_seen,
+    SELECT c.name, c.ou, m.first_seen, m.last_seen, m.auth_types,
            GROUP_CONCAT(DISTINCT ci.ip, '; ') as ips
     FROM auth_mappings m
     JOIN computers c ON c.id = m.computer_id
@@ -381,7 +406,7 @@ function getAccountDetail(name) {
     WHERE m.account_id = ?
     GROUP BY c.id
     ORDER BY c.name
-  `).all(account.id);
+  `).all(account.id).map(c => ({ ...c, auth_types: parseAuthTypes(c.auth_types) }));
 
   return { ...account, computers };
 }
@@ -415,7 +440,7 @@ function getNetworkData({ search, accountFilter, ouFilter, svcOnly, svcPatterns 
   const links = [];
 
   const rows = db.prepare(`
-    SELECT c.name as computer_name, a.name as account_name
+    SELECT c.name as computer_name, a.name as account_name, m.auth_types
     FROM auth_mappings m
     JOIN computers c ON c.id = m.computer_id
     JOIN accounts a ON a.id = m.account_id

@@ -19,6 +19,12 @@ let netSvcOnly = false;
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+function authBadges(types) {
+  if (!types || !Array.isArray(types) || types.length === 0) return '';
+  const map = { NTLM: 'ntlm', Kerberos: 'kerberos', Logon: 'logon' };
+  return types.map(t => `<span class="badge-auth badge-${map[t] || 'logon'}">${esc(t)}</span>`).join('');
+}
+
 function toast(msg, type = 'success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -402,11 +408,12 @@ async function openComputerDetail(name) {
       </h3>
       <div class="table-scroll" style="max-height:400px;">
         <table class="data-table">
-          <thead><tr><th>Account</th><th>First Seen</th><th>Last Seen</th></tr></thead>
+          <thead><tr><th>Account</th><th>Auth Types</th><th>First Seen</th><th>Last Seen</th></tr></thead>
           <tbody>
             ${data.accounts.map(a => `
               <tr style="cursor:pointer;" onclick="openAccountDetail('${esc(a.name).replace(/'/g, "\\'")}')">
                 <td><strong>${esc(a.name)}</strong></td>
+                <td>${authBadges(a.auth_types)}</td>
                 <td style="font-size:12px;color:var(--text2);">${fmtDate(a.first_seen)}</td>
                 <td style="font-size:12px;color:var(--text2);">${fmtDate(a.last_seen)}</td>
               </tr>
@@ -521,11 +528,12 @@ async function openAccountDetail(name) {
       </h3>
       <div class="table-scroll" style="max-height:400px;">
         <table class="data-table">
-          <thead><tr><th>Computer</th><th>IPs</th><th>OU</th><th>First Seen</th><th>Last Seen</th></tr></thead>
+          <thead><tr><th>Computer</th><th>Auth Types</th><th>IPs</th><th>OU</th><th>First Seen</th><th>Last Seen</th></tr></thead>
           <tbody>
             ${data.computers.map(c => `
               <tr style="cursor:pointer;" onclick="openComputerDetail('${esc(c.name).replace(/'/g, "\\'")}')">
                 <td><strong>${esc(c.name)}</strong></td>
+                <td>${authBadges(c.auth_types)}</td>
                 <td style="font-size:12px;color:var(--text2);">${esc(c.ips || '-')}</td>
                 <td style="font-size:11px;color:var(--text3);max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.ou)}">${esc(c.ou || '-')}</td>
                 <td style="font-size:12px;color:var(--text2);">${fmtDate(c.first_seen)}</td>

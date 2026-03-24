@@ -74,6 +74,19 @@ Write-Host ""
 
 $startTime = Get-Date
 
+# ── Detect default domain (for 4776 which lacks domain field) ───────────────
+$defaultDomain = ''
+try {
+    if ($env:USERDNSDOMAIN) {
+        $defaultDomain = ($env:USERDNSDOMAIN -split '\.')[0].ToUpper()
+    } elseif ($env:USERDOMAIN) {
+        $defaultDomain = $env:USERDOMAIN.ToUpper()
+    }
+} catch { }
+if ($defaultDomain) {
+    Write-Host "[*] Default domain    : $defaultDomain" -ForegroundColor Yellow
+}
+
 # ── Auto-export from DC if requested ───────────────────────────────────────
 if ($PSCmdlet.ParameterSetName -eq 'ExportAndParse') {
     $DomainController = $ExportFromDC
@@ -211,7 +224,8 @@ function Add-AuthMapping {
     param(
         [string]$Computer,
         [string]$IpAddress,
-        [string]$Account
+        [string]$Account,
+        [string]$AuthType
     )
 
     $comp = Normalize-ComputerName $Computer
@@ -223,7 +237,7 @@ function Add-AuthMapping {
     if (-not $computerMap.ContainsKey($comp)) {
         $computerMap[$comp] = @{
             ips      = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-            accounts = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            accounts = @{}
         }
     }
 
@@ -232,7 +246,10 @@ function Add-AuthMapping {
         $computerMap[$comp].ips.Add($ip) | Out-Null
     }
 
-    $computerMap[$comp].accounts.Add($acct) | Out-Null
+    if (-not $computerMap[$comp].accounts.ContainsKey($acct)) {
+        $computerMap[$comp].accounts[$acct] = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    }
+    if ($AuthType) { $computerMap[$comp].accounts[$acct].Add($AuthType) | Out-Null }
 }
 
 # ── Parse each .evtx file ──────────────────────────────────────────────────
@@ -312,7 +329,7 @@ foreach ($evtxFile in $evtxFiles) {
                 $domain = Normalize-DomainName $targetDomain
                 $account = if ($domain -and $domain -ne '-') { "$domain\$targetUser" } else { $targetUser }
 
-                Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account
+                Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account -AuthType 'Logon'
                 $fileCount4624++
             }
             elseif ($id -eq 4768) {
@@ -343,7 +360,7 @@ foreach ($evtxFile in $evtxFiles) {
                 $domain = Normalize-DomainName $targetDomain
                 $account = if ($domain -and $domain -ne '-') { "$domain\$targetUser" } else { $targetUser }
 
-                Add-AuthMapping -Computer $computerName -IpAddress $ip -Account $account
+                Add-AuthMapping -Computer $computerName -IpAddress $ip -Account $account -AuthType 'Kerberos'
                 $fileCount4768++
             }
             elseif ($id -eq 4769) {
@@ -377,7 +394,7 @@ foreach ($evtxFile in $evtxFiles) {
                     $account = "$domain\$($Matches[1])"
                 }
 
-                Add-AuthMapping -Computer $spnHost -IpAddress $ipAddress -Account $account
+                Add-AuthMapping -Computer $spnHost -IpAddress $ipAddress -Account $account -AuthType 'Kerberos'
                 $fileCount4769++
             }
             elseif ($id -eq 4776) {
@@ -392,7 +409,8 @@ foreach ($evtxFile in $evtxFiles) {
                 if ($targetUser -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE')) { $evt.Dispose(); continue }
 
                 if ($workstation) {
-                    Add-AuthMapping -Computer $workstation -IpAddress $null -Account $targetUser
+                    $ntlmAccount = if ($defaultDomain) { "$defaultDomain\$targetUser" } else { $targetUser }
+                    Add-AuthMapping -Computer $workstation -IpAddress $null -Account $ntlmAccount -AuthType 'NTLM'
                     $fileCount4776++
                 }
             }
@@ -446,12 +464,14 @@ foreach ($compName in ($computerMap.Keys | Sort-Object)) {
         name     = $compName
         ips      = @($entry.ips | Sort-Object)
         ou       = $entry.ou
-        accounts = @($entry.accounts | Sort-Object)
+        accounts = @($entry.accounts.GetEnumerator() | Sort-Object Name | ForEach-Object {
+            @{ name = $_.Key; auth_types = @($_.Value | Sort-Object) }
+        })
     }
 }
 
 $totalAccounts = ($computerMap.Values | ForEach-Object { $_.accounts.Count } | Measure-Object -Sum).Sum
-$uniqueAccounts = ($computerMap.Values | ForEach-Object { $_.accounts } | Sort-Object -Unique).Count
+$uniqueAccounts = ($computerMap.Values | ForEach-Object { $_.accounts.Keys } | Sort-Object -Unique).Count
 
 # ── Write JSON ──────────────────────────────────────────────────────────────
 $timestamp = $startTime.ToString("yyyyMMdd_HHmmss")

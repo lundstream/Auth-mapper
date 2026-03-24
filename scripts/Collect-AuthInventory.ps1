@@ -50,7 +50,21 @@ Write-Host ""
 
 $startTime = Get-Date
 $cutoff = $startTime.AddHours(-$HoursBack)
+
+# ── Detect default domain (for 4776 which lacks domain field) ───────────────
+$defaultDomain = ''
+try {
+    if ($env:USERDNSDOMAIN) {
+        $defaultDomain = ($env:USERDNSDOMAIN -split '\.')[0].ToUpper()
+    } elseif ($env:USERDOMAIN) {
+        $defaultDomain = $env:USERDOMAIN.ToUpper()
+    }
+} catch { }
+
 Write-Host "[*] Domain Controller : $DomainController" -ForegroundColor Yellow
+if ($defaultDomain) {
+    Write-Host "[*] Default domain    : $defaultDomain" -ForegroundColor Yellow
+}
 Write-Host "[*] Time range        : $($cutoff.ToString('yyyy-MM-dd HH:mm')) to $($startTime.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Yellow
 Write-Host "[*] Hours back        : $HoursBack" -ForegroundColor Yellow
 Write-Host ""
@@ -127,7 +141,8 @@ function Add-AuthMapping {
     param(
         [string]$Computer,
         [string]$IpAddress,
-        [string]$Account
+        [string]$Account,
+        [string]$AuthType
     )
 
     $comp = Normalize-ComputerName $Computer
@@ -140,7 +155,7 @@ function Add-AuthMapping {
     if (-not $computerMap.ContainsKey($comp)) {
         $computerMap[$comp] = @{
             ips      = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-            accounts = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            accounts = @{}
         }
     }
 
@@ -150,7 +165,10 @@ function Add-AuthMapping {
         $computerMap[$comp].ips.Add($ip) | Out-Null
     }
 
-    $computerMap[$comp].accounts.Add($acct) | Out-Null
+    if (-not $computerMap[$comp].accounts.ContainsKey($acct)) {
+        $computerMap[$comp].accounts[$acct] = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    }
+    if ($AuthType) { $computerMap[$comp].accounts[$acct].Add($AuthType) | Out-Null }
 }
 
 # ── Query Event ID 4624 (Successful Logon) ─────────────────────────────────
@@ -205,7 +223,7 @@ try {
         $domain = Normalize-DomainName $targetDomain
         $account = if ($domain -and $domain -ne '-') { "$domain\$targetUser" } else { $targetUser }
 
-        Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account
+        Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account -AuthType 'Logon'
         $count4624++
     }
     Write-Host "    Found $count4624 relevant logon events from $($events4624.Count) total 4624 events" -ForegroundColor Green
@@ -248,7 +266,8 @@ try {
         if ($targetUser -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE')) { continue }
 
         if ($workstation) {
-            Add-AuthMapping -Computer $workstation -IpAddress $null -Account $targetUser
+            $ntlmAccount = if ($defaultDomain) { "$defaultDomain\$targetUser" } else { $targetUser }
+            Add-AuthMapping -Computer $workstation -IpAddress $null -Account $ntlmAccount -AuthType 'NTLM'
             $count4776++
         }
     }
@@ -309,7 +328,7 @@ try {
             $account = "$domain\$($Matches[1])"
         }
 
-        Add-AuthMapping -Computer $spnHost -IpAddress $ipAddress -Account $account
+        Add-AuthMapping -Computer $spnHost -IpAddress $ipAddress -Account $account -AuthType 'Kerberos'
         $count4769++
     }
     Write-Host "    Found $count4769 relevant Kerberos events from $($events4769.Count) total 4769 events" -ForegroundColor Green
@@ -365,7 +384,7 @@ try {
         $domain = Normalize-DomainName $targetDomain
         $account = if ($domain -and $domain -ne '-') { "$domain\$targetUser" } else { $targetUser }
 
-        Add-AuthMapping -Computer $computerName -IpAddress $ip -Account $account
+        Add-AuthMapping -Computer $computerName -IpAddress $ip -Account $account -AuthType 'Kerberos'
         $count4768++
     }
     Write-Host "    Found $count4768 relevant TGT events from $($events4768.Count) total 4768 events" -ForegroundColor Green
@@ -401,12 +420,14 @@ foreach ($compName in ($computerMap.Keys | Sort-Object)) {
         name     = $compName
         ips      = @($entry.ips | Sort-Object)
         ou       = $entry.ou
-        accounts = @($entry.accounts | Sort-Object)
+        accounts = @($entry.accounts.GetEnumerator() | Sort-Object Name | ForEach-Object {
+            @{ name = $_.Key; auth_types = @($_.Value | Sort-Object) }
+        })
     }
 }
 
 $totalAccounts = ($computerMap.Values | ForEach-Object { $_.accounts.Count } | Measure-Object -Sum).Sum
-$uniqueAccounts = ($computerMap.Values | ForEach-Object { $_.accounts } | Sort-Object -Unique).Count
+$uniqueAccounts = ($computerMap.Values | ForEach-Object { $_.accounts.Keys } | Sort-Object -Unique).Count
 
 # ── Write JSON ──────────────────────────────────────────────────────────────
 $timestamp = $startTime.ToString("yyyyMMdd_HHmmss")
