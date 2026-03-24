@@ -456,6 +456,7 @@ async function openComputerDetail(name) {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tier: compTierSel.value })
           });
+          if (!r.ok) { toast('Failed to update tier (HTTP ' + r.status + ')', 'error'); return; }
           const result = await r.json();
           if (result.error) { toast(result.error, 'error'); return; }
           toast('Tier updated');
@@ -609,6 +610,7 @@ async function openAccountDetail(name) {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tier: acctTierSel.value })
           });
+          if (!r.ok) { toast('Failed to update tier (HTTP ' + r.status + ')', 'error'); return; }
           const result = await r.json();
           if (result.error) { toast(result.error, 'error'); return; }
           toast('Tier updated');
