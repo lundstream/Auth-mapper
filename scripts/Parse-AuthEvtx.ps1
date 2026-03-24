@@ -219,47 +219,29 @@ function Resolve-IpToHostname {
     }
 }
 
-# ── Helper: Resolve UPN to DOMAIN\sAMAccountName ────────────────────────────
-$upnCache = @{}
+# ── Helper: Normalize account name (strip UPN suffix, prefix domain) ──────────
 function Resolve-AccountName {
     param(
         [string]$UserName,
         [string]$Domain
     )
-    # If already in DOMAIN\user format, return as-is
+    # Already in DOMAIN\user format: return as-is
     if ($UserName -match '\\') { return $UserName }
 
-    # Detect UPN format: user@domain.com
-    if ($UserName -match '^(.+)@(.+)$') {
-        $upn = $UserName
-        if ($upnCache.ContainsKey($upn)) { return $upnCache[$upn] }
-
-        # Try AD lookup: find sAMAccountName by UPN
-        try {
-            $searcher = New-Object System.DirectoryServices.DirectorySearcher
-            $searcher.Filter = "(userPrincipalName=$upn)"
-            $searcher.PropertiesToLoad.Add('sAMAccountName') | Out-Null
-            $searcher.PropertiesToLoad.Add('msDS-PrincipalName') | Out-Null
-            $result = $searcher.FindOne()
-            if ($result) {
-                $sam = [string]$result.Properties['samaccountname'][0]
-                $d = Normalize-DomainName ($Matches[2])
-                $resolved = if ($d -and $d -ne '-') { "$d\$sam" } else { $sam }
-                $upnCache[$upn] = $resolved
-                return $resolved
-            }
-        } catch { }
-
-        # Fallback: strip @domain and use domain prefix (best effort)
-        $d = Normalize-DomainName ($Matches[2])
-        $fallback = if ($d -and $d -ne '-') { "$d\$($Matches[1])" } else { $Matches[1] }
-        $upnCache[$upn] = $fallback
-        return $fallback
+    # UPN format (user@domain.com): split, use domain from suffix
+    if ($UserName -match '^([^@]+)@(.+)$') {
+        $user = $Matches[1]
+        $d = Normalize-DomainName $Matches[2]
+        if ($d -and $d -ne '-') { return "$d\$user" }
+        return $user
     }
 
-    # Plain username: prefix with domain if available
-    $d = if ($Domain) { Normalize-DomainName $Domain } else { '' }
-    if ($d -and $d -ne '-') { return "$d\$UserName" } else { return $UserName }
+    # Plain username: prefix with domain if provided
+    if ($Domain) {
+        $d = Normalize-DomainName $Domain
+        if ($d -and $d -ne '-') { return "$d\$UserName" }
+    }
+    return $UserName
 }
 
 # ── Helper: Add an auth mapping ─────────────────────────────────────────────
@@ -369,8 +351,7 @@ foreach ($evtxFile in $evtxFiles) {
                 if ($targetDomain -in @('Window Manager', 'Font Driver Host', 'NT AUTHORITY')) { $evt.Dispose(); continue }
 
                 $computerName = if ($workstation) { $workstation } else { $DomainController }
-                $domain = Normalize-DomainName $targetDomain
-                $account = if ($domain -and $domain -ne '-') { "$domain\$targetUser" } else { $targetUser }
+                $account = Resolve-AccountName -UserName $targetUser -Domain $targetDomain
 
                 Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account -AuthType 'Logon'
                 $fileCount4624++
@@ -447,7 +428,7 @@ foreach ($evtxFile in $evtxFiles) {
                 if ($targetUser -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE')) { $evt.Dispose(); continue }
 
                 if ($workstation) {
-                    $ntlmAccount = if ($defaultDomain) { "$defaultDomain\$targetUser" } else { $targetUser }
+                    $ntlmAccount = Resolve-AccountName -UserName $targetUser -Domain $defaultDomain
                     Add-AuthMapping -Computer $workstation -IpAddress $null -Account $ntlmAccount -AuthType 'NTLM'
                     $fileCount4776++
                 }

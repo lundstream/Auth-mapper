@@ -395,6 +395,10 @@ async function openComputerDetail(name) {
   try {
     const r = await fetch('/api/computers/' + encodeURIComponent(name));
     const data = await r.json();
+    if (!r.ok || !data.accounts) {
+      body.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${esc(data.error || 'Computer not found')}</p></div>`;
+      return;
+    }
 
     body.innerHTML = `
       <div class="detail-grid">
@@ -514,6 +518,10 @@ async function openAccountDetail(name) {
   try {
     const r = await fetch('/api/accounts/' + encodeURIComponent(name));
     const data = await r.json();
+    if (!r.ok || !data.computers) {
+      body.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${esc(data.error || 'Account not found')}</p></div>`;
+      return;
+    }
     const isSvc = svcRegex.test(data.name);
 
     body.innerHTML = `
