@@ -469,7 +469,6 @@ body.modal-open { overflow: hidden; }
         <div class="panel-actions">
           <input type="text" class="search-input" id="netSearch" placeholder="Filter by computer or account name">
           <input type="text" class="search-input" id="netOuFilter" placeholder="Filter by OU" style="width:200px;" list="ouList">
-          <datalist id="ouList"></datalist>
           <select class="search-input" id="netTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
           </select>
@@ -719,6 +718,7 @@ body.modal-open { overflow: hidden; }
 
 <!-- ── Toast ───────────────────────────────────────────────────────────── -->
 <div id="toast"></div>
+<datalist id="ouList"></datalist>
 
 <script src="app.js"></script>
 </body>
