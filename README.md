@@ -4,10 +4,19 @@ Visualize which accounts authenticate against which servers by collecting data f
 
 ## Screenshots
 
+**Dashboard** — Overview with KPI cards, authentication activity chart, and top accounts/computers.
 ![Dashboard](screenshots/1.png)
+
+**Computers** — All discovered servers with IPs, OUs, and authenticated account counts.
 ![Computers](screenshots/2.png)
+
+**Accounts** — Every account seen in logon events, with the number of computers it authenticated to.
 ![Accounts](screenshots/3.png)
+
+**Network Map** — Interactive force-directed graph showing which accounts connect to which servers.
 ![Network Map](screenshots/4.png)
+
+**Import & Export** — Drag-and-drop JSON import, CSV export, and service account pattern configuration.
 ![Import & Export](screenshots/5.png)
 
 ## Features
