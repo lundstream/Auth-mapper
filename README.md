@@ -2,6 +2,14 @@
 
 Visualize which accounts authenticate against which servers by collecting data from Domain Controller security logs.
 
+## Screenshots
+
+![Dashboard](screenshots/1.png)
+![Computers](screenshots/2.png)
+![Accounts](screenshots/3.png)
+![Network Map](screenshots/4.png)
+![Import & Export](screenshots/5.png)
+
 ## Features
 
 - **PowerShell collection script** — Queries DC security logs (Event 4624 + 4776) for logon events, resolves computer OUs from AD, outputs JSON
