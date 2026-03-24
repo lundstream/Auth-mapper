@@ -460,6 +460,7 @@ async function loadAccounts() {
     page: acctPage, limit: 100, sort: acctSort, dir: acctDir
   });
   if (acctSearch) params.set('q', wildcardToLike(acctSearch));
+  if (acctSvcOnly) params.set('svcOnly', '1');
 
   try {
     const r = await fetch('/api/accounts?' + params);

@@ -175,7 +175,7 @@ function Get-ComputerOU {
 function Normalize-ComputerName {
     param([string]$Name)
     if ([string]::IsNullOrWhiteSpace($Name)) { return $null }
-    $n = $Name.Trim().TrimEnd('$').ToUpper()
+    $n = $Name.Trim().TrimStart('\').TrimEnd('$').ToUpper()
     if ($n -eq '-' -or $n -eq '' -or $n -eq 'LOCALHOST' -or $n.Length -lt 2) { return $null }
     return $n
 }
