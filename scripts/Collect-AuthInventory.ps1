@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Queries Windows Security event logs on a Domain Controller for logon events
-    (Event ID 4624 - Successful logon, 4776 - Credential validation via NTLM).
+    (Event ID 4624 - Successful logon, 4769 - Kerberos service ticket, 4776 - Credential validation via NTLM).
     Extracts unique computer targets, their IP addresses, the OU of the computer
     object in AD, and the accounts that authenticated against each computer.
 
@@ -127,7 +127,7 @@ function Add-AuthMapping {
 }
 
 # ── Query Event ID 4624 (Successful Logon) ─────────────────────────────────
-Write-Host "[1/3] Querying Event ID 4624 (Successful Logon)..." -ForegroundColor Cyan
+Write-Host "[1/4] Querying Event ID 4624 (Successful Logon)..." -ForegroundColor Cyan
 
 $filterXml4624 = @"
 <QueryList>
@@ -186,7 +186,7 @@ try {
 }
 
 # ── Query Event ID 4776 (NTLM Credential Validation) ───────────────────────
-Write-Host "[2/3] Querying Event ID 4776 (NTLM Credential Validation)..." -ForegroundColor Cyan
+Write-Host "[2/4] Querying Event ID 4776 (NTLM Credential Validation)..." -ForegroundColor Cyan
 
 $filterXml4776 = @"
 <QueryList>
@@ -229,8 +229,67 @@ try {
     Write-Host "    Warning: Could not query 4776 events: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
+# ── Query Event ID 4769 (Kerberos Service Ticket) ──────────────────────────
+Write-Host "[3/4] Querying Event ID 4769 (Kerberos Service Ticket)..." -ForegroundColor Cyan
+
+$filterXml4769 = @"
+<QueryList>
+  <Query Id="0" Path="Security">
+    <Select Path="Security">
+      *[System[(EventID=4769) and TimeCreated[timediff(@SystemTime) &lt;= $(($HoursBack * 3600 * 1000))]]]
+    </Select>
+  </Query>
+</QueryList>
+"@
+
+try {
+    $params4769 = @{
+        FilterXml    = $filterXml4769
+        ComputerName = $DomainController
+        ErrorAction  = "SilentlyContinue"
+    }
+    if ($MaxEvents -gt 0) { $params4769['MaxEvents'] = $MaxEvents }
+
+    $events4769 = Get-WinEvent @params4769
+
+    $count4769 = 0
+    foreach ($evt in $events4769) {
+        $props = $evt.Properties
+        if ($props.Count -lt 9) { continue }
+
+        # Only successful requests (Status 0x0)
+        $status = $props[8].Value
+        if ($status -ne 0) { continue }
+
+        $targetUser  = [string]$props[0].Value
+        $serviceName = [string]$props[2].Value
+        $ipAddress   = [string]$props[6].Value
+
+        # Skip machine accounts and krbtgt (TGT renewals)
+        if ($targetUser -match '\$$') { continue }
+        if ([string]::IsNullOrWhiteSpace($serviceName) -or $serviceName -eq 'krbtgt') { continue }
+
+        # Extract computer name from SPN (format: service/hostname or service/hostname.domain)
+        $spnParts = $serviceName -split '/'
+        if ($spnParts.Count -lt 2) { continue }
+        $spnHost = $spnParts[1] -split '\.' | Select-Object -First 1
+
+        # Clean up account name: user@DOMAIN -> DOMAIN\user
+        $account = $targetUser
+        if ($targetUser -match '^(.+)@(.+)$') {
+            $account = "$($Matches[2])\$($Matches[1])"
+        }
+
+        Add-AuthMapping -Computer $spnHost -IpAddress $ipAddress -Account $account
+        $count4769++
+    }
+    Write-Host "    Found $count4769 relevant Kerberos events from $($events4769.Count) total 4769 events" -ForegroundColor Green
+} catch {
+    Write-Host "    Warning: Could not query 4769 events: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
 # ── Resolve OUs ─────────────────────────────────────────────────────────────
-Write-Host "[3/3] Resolving OUs for $($computerMap.Count) computers..." -ForegroundColor Cyan
+Write-Host "[4/4] Resolving OUs for $($computerMap.Count) computers..." -ForegroundColor Cyan
 $ouResolved = 0
 foreach ($compName in @($computerMap.Keys)) {
     $ou = Get-ComputerOU $compName

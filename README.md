@@ -21,7 +21,7 @@ Visualize which accounts authenticate against which servers by collecting data f
 
 ## Features
 
-- **PowerShell collection script** — Queries DC security logs (Event 4624 + 4776) for logon events, resolves computer OUs from AD, outputs JSON
+- **PowerShell collection script** — Queries DC security logs (Event 4624, 4769, 4776) for logon and Kerberos service ticket events, resolves computer OUs from AD, outputs JSON
 - **Jumphost parser** — Export .evtx from DC, parse locally on any domain-joined machine (minimal DC load for large environments)
 - **Web dashboard** — Dark-themed UI with stats, charts, filterable tables, network graph
 - **Computers tab** — List all computers/servers with IPs, OUs, and account counts; sortable and filterable
@@ -45,7 +45,7 @@ Visualize which accounts authenticate against which servers by collecting data f
 
 ```powershell
 # On DC: export filtered events (takes seconds)
-wevtutil epl Security \\jumphost\c$\temp\dc01_security.evtx /q:"*[System[(EventID=4624 or EventID=4776)]]"
+wevtutil epl Security \\jumphost\c$\temp\dc01_security.evtx /q:"*[System[(EventID=4624 or EventID=4769 or EventID=4776)]]"
 
 # On jumphost: parse locally
 .\scripts\Parse-AuthEvtx.ps1 -EvtxPath C:\temp\dc01_security.evtx -DomainController DC01
