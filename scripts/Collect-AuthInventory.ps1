@@ -150,27 +150,30 @@ try {
     $events4624 = Get-WinEvent @params4624
 
     $count4624 = 0
+    $progress4624 = 0
     foreach ($evt in $events4624) {
-        $xml = [xml]$evt.ToXml()
-        $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
-        $ns.AddNamespace("e", "http://schemas.microsoft.com/win/2004/08/events/event")
+        $progress4624++
+        if ($progress4624 % 50000 -eq 0) {
+            Write-Host "    Processed $progress4624 events..." -ForegroundColor Gray
+        }
 
-        $logonType = ($xml.SelectSingleNode("//e:Data[@Name='LogonType']", $ns)).'#text'
+        $props = $evt.Properties
+        if ($props.Count -lt 19) { continue }
+
+        $logonType = [string]$props[8].Value
         # Focus on network (3), batch (4), service (5), remote interactive (10), cached interactive (11)
         if ($logonType -notin @('3', '4', '5', '10', '11')) { continue }
 
-        $targetUser   = ($xml.SelectSingleNode("//e:Data[@Name='TargetUserName']", $ns)).'#text'
-        $targetDomain = ($xml.SelectSingleNode("//e:Data[@Name='TargetDomainName']", $ns)).'#text'
-        $workstation  = ($xml.SelectSingleNode("//e:Data[@Name='WorkstationName']", $ns)).'#text'
-        $ipAddress    = ($xml.SelectSingleNode("//e:Data[@Name='IpAddress']", $ns)).'#text'
+        $targetUser   = [string]$props[5].Value
+        $targetDomain = [string]$props[6].Value
+        $workstation  = [string]$props[11].Value
+        $ipAddress    = [string]$props[18].Value
 
         # Skip machine accounts (ending in $) and common system accounts
         if ($targetUser -match '\$$') { continue }
         if ($targetUser -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'DWM-1', 'DWM-2', 'UMFD-0', 'UMFD-1')) { continue }
         if ($targetDomain -in @('Window Manager', 'Font Driver Host', 'NT AUTHORITY')) { continue }
 
-        # The "computer being authenticated against" is the DC itself for domain logons,
-        # but WorkstationName tells us where the logon originated / was directed
         $computerName = if ($workstation) { $workstation } else { $DomainController }
         $account = if ($targetDomain -and $targetDomain -ne '-') { "$targetDomain\$targetUser" } else { $targetUser }
 
@@ -207,12 +210,11 @@ try {
 
     $count4776 = 0
     foreach ($evt in $events4776) {
-        $xml = [xml]$evt.ToXml()
-        $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
-        $ns.AddNamespace("e", "http://schemas.microsoft.com/win/2004/08/events/event")
+        $props = $evt.Properties
+        if ($props.Count -lt 3) { continue }
 
-        $targetUser  = ($xml.SelectSingleNode("//e:Data[@Name='TargetUserName']", $ns)).'#text'
-        $workstation = ($xml.SelectSingleNode("//e:Data[@Name='Workstation']", $ns)).'#text'
+        $targetUser  = [string]$props[1].Value
+        $workstation = [string]$props[2].Value
 
         if ([string]::IsNullOrWhiteSpace($targetUser) -or $targetUser -match '\$$') { continue }
         if ($targetUser -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE')) { continue }

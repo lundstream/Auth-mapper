@@ -220,76 +220,97 @@ $totalRaw  = 0
 foreach ($evtxFile in $evtxFiles) {
     Write-Host "    Parsing $($evtxFile.Name)..." -ForegroundColor Gray
 
-    $filterXml = @"
-<QueryList>
-  <Query Id="0" Path="file://$($evtxFile.FullName)">
-    <Select Path="file://$($evtxFile.FullName)">
-      *[System[(EventID=4624 or EventID=4776)]]
-    </Select>
-  </Query>
-</QueryList>
-"@
-
-    try {
-        $events = Get-WinEvent -FilterXml $filterXml -ErrorAction SilentlyContinue
-    } catch {
-        Write-Host "    Warning: Could not read $($evtxFile.Name): $($_.Exception.Message)" -ForegroundColor Yellow
-        continue
-    }
-
-    if (-not $events) {
-        Write-Host "    No matching events in $($evtxFile.Name)" -ForegroundColor Yellow
-        continue
-    }
-
-    $totalRaw += $events.Count
     $fileCount4624 = 0
     $fileCount4776 = 0
+    $fileRaw = 0
 
-    foreach ($evt in $events) {
-        # Optional time filter (if user specified -HoursBack and didn't use ExportFromDC with time filter)
-        if ($HoursBack -gt 0 -and $evt.TimeCreated -lt $cutoff) { continue }
+    # Use EventLogReader to stream events (constant memory, much faster than Get-WinEvent)
+    $query = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery(
+        $evtxFile.FullName,
+        [System.Diagnostics.Eventing.Reader.PathType]::FilePath,
+        "*[System[(EventID=4624 or EventID=4776)]]"
+    )
 
-        $xml = [xml]$evt.ToXml()
-        $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
-        $ns.AddNamespace("e", "http://schemas.microsoft.com/win/2004/08/events/event")
-
-        if ($evt.Id -eq 4624) {
-            $logonType = ($xml.SelectSingleNode("//e:Data[@Name='LogonType']", $ns)).'#text'
-            if ($logonType -notin @('3', '4', '5', '10', '11')) { continue }
-
-            $targetUser   = ($xml.SelectSingleNode("//e:Data[@Name='TargetUserName']", $ns)).'#text'
-            $targetDomain = ($xml.SelectSingleNode("//e:Data[@Name='TargetDomainName']", $ns)).'#text'
-            $workstation  = ($xml.SelectSingleNode("//e:Data[@Name='WorkstationName']", $ns)).'#text'
-            $ipAddress    = ($xml.SelectSingleNode("//e:Data[@Name='IpAddress']", $ns)).'#text'
-
-            if ($targetUser -match '\$$') { continue }
-            if ($targetUser -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'DWM-1', 'DWM-2', 'UMFD-0', 'UMFD-1')) { continue }
-            if ($targetDomain -in @('Window Manager', 'Font Driver Host', 'NT AUTHORITY')) { continue }
-
-            $computerName = if ($workstation) { $workstation } else { $DomainController }
-            $account = if ($targetDomain -and $targetDomain -ne '-') { "$targetDomain\$targetUser" } else { $targetUser }
-
-            Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account
-            $fileCount4624++
-        }
-        elseif ($evt.Id -eq 4776) {
-            $targetUser  = ($xml.SelectSingleNode("//e:Data[@Name='TargetUserName']", $ns)).'#text'
-            $workstation = ($xml.SelectSingleNode("//e:Data[@Name='Workstation']", $ns)).'#text'
-
-            if ([string]::IsNullOrWhiteSpace($targetUser) -or $targetUser -match '\$$') { continue }
-            if ($targetUser -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE')) { continue }
-
-            if ($workstation) {
-                Add-AuthMapping -Computer $workstation -IpAddress $null -Account $targetUser
-                $fileCount4776++
-            }
-        }
+    try {
+        $reader = New-Object System.Diagnostics.Eventing.Reader.EventLogReader($query)
+    } catch {
+        Write-Host "    Warning: Could not open $($evtxFile.Name): $($_.Exception.Message)" -ForegroundColor Yellow
+        continue
     }
 
+    $progressInterval = 50000
+    try {
+        while ($true) {
+            $evt = $reader.ReadEvent()
+            if ($null -eq $evt) { break }
+
+            $fileRaw++
+            if ($fileRaw % $progressInterval -eq 0) {
+                Write-Host "    Processed $fileRaw events..." -ForegroundColor Gray
+            }
+
+            # Optional time filter
+            if ($HoursBack -gt 0 -and $evt.TimeCreated -lt $cutoff) {
+                $evt.Dispose()
+                continue
+            }
+
+            $id = $evt.Id
+
+            if ($id -eq 4624) {
+                # 4624 Properties: [0]SubjectUserSid [1]SubjectUserName [2]SubjectDomainName [3]SubjectLogonId
+                # [4]TargetUserSid [5]TargetUserName [6]TargetDomainName [7]TargetLogonId
+                # [8]LogonType [9]LogonProcessName [10]AuthenticationPackageName
+                # [11]WorkstationName [12]LogonGuid [13]TransmittedServices [14]LmPackageName
+                # [15]KeyLength [16]ProcessId [17]ProcessName [18]IpAddress [19]IpPort
+                $props = $evt.Properties
+                if ($props.Count -lt 19) { $evt.Dispose(); continue }
+
+                $logonType = [string]$props[8].Value
+                if ($logonType -notin @('3', '4', '5', '10', '11')) { $evt.Dispose(); continue }
+
+                $targetUser   = [string]$props[5].Value
+                $targetDomain = [string]$props[6].Value
+                $workstation  = [string]$props[11].Value
+                $ipAddress    = [string]$props[18].Value
+
+                if ($targetUser -match '\$$') { $evt.Dispose(); continue }
+                if ($targetUser -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'DWM-1', 'DWM-2', 'UMFD-0', 'UMFD-1')) { $evt.Dispose(); continue }
+                if ($targetDomain -in @('Window Manager', 'Font Driver Host', 'NT AUTHORITY')) { $evt.Dispose(); continue }
+
+                $computerName = if ($workstation) { $workstation } else { $DomainController }
+                $account = if ($targetDomain -and $targetDomain -ne '-') { "$targetDomain\$targetUser" } else { $targetUser }
+
+                Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account
+                $fileCount4624++
+            }
+            elseif ($id -eq 4776) {
+                # 4776 Properties: [0]PackageName [1]TargetUserName [2]Workstation [3]Status
+                $props = $evt.Properties
+                if ($props.Count -lt 3) { $evt.Dispose(); continue }
+
+                $targetUser  = [string]$props[1].Value
+                $workstation = [string]$props[2].Value
+
+                if ([string]::IsNullOrWhiteSpace($targetUser) -or $targetUser -match '\$$') { $evt.Dispose(); continue }
+                if ($targetUser -in @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE')) { $evt.Dispose(); continue }
+
+                if ($workstation) {
+                    Add-AuthMapping -Computer $workstation -IpAddress $null -Account $targetUser
+                    $fileCount4776++
+                }
+            }
+
+            $evt.Dispose()
+        }
+    } finally {
+        $reader.Dispose()
+    }
+
+    $totalRaw += $fileRaw
     $total4624 += $fileCount4624
     $total4776 += $fileCount4776
-    Write-Host "    $($evtxFile.Name): $fileCount4624 logon + $fileCount4776 NTLM events (from $($events.Count) raw)" -ForegroundColor Green
+    Write-Host "    $($evtxFile.Name): $fileCount4624 logon + $fileCount4776 NTLM events (from $fileRaw raw)" -ForegroundColor Green
 }
 
 Write-Host "    Total: $total4624 logon + $total4776 NTLM events from $totalRaw raw events" -ForegroundColor Green
