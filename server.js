@@ -90,10 +90,11 @@ app.get('/api/dashboard', (req, res) => {
 // Computers list
 app.get('/api/computers', (req, res) => {
   try {
-    const { q, ou, sort, dir, page, limit, svcOnly } = req.query;
+    const { q, ou, tier, sort, dir, page, limit, svcOnly } = req.query;
     res.json(db.getComputers({
       search: q || '',
       ouFilter: ou || '',
+      tierFilter: tier || '',
       sort: sort || 'name',
       dir: dir || 'ASC',
       page: parseInt(page) || 1,
@@ -120,9 +121,10 @@ app.get('/api/computers/:name', (req, res) => {
 // Accounts list
 app.get('/api/accounts', (req, res) => {
   try {
-    const { q, sort, dir, page, limit, svcOnly } = req.query;
+    const { q, tier, sort, dir, page, limit, svcOnly } = req.query;
     res.json(db.getAccounts({
       search: q || '',
+      tierFilter: tier || '',
       sort: sort || 'name',
       dir: dir || 'ASC',
       page: parseInt(page) || 1,
@@ -149,11 +151,12 @@ app.get('/api/accounts/:name', (req, res) => {
 // Network graph data
 app.get('/api/network', (req, res) => {
   try {
-    const { q, account, ou, svcOnly } = req.query;
+    const { q, account, ou, tier, svcOnly } = req.query;
     res.json(db.getNetworkData({
       search: q || '',
       accountFilter: account || '',
       ouFilter: ou || '',
+      tierFilter: tier || '',
       svcOnly: svcOnly === '1',
       svcPatterns: settings.svcPatterns || ['svc', 'service']
     }));
@@ -232,6 +235,50 @@ app.put('/api/settings/svc-patterns', (req, res) => {
     if (settings.svcPatterns.length === 0) settings.svcPatterns = ['svc', 'service'];
     fs.writeFileSync(path.join(__dirname, 'settings.json'), JSON.stringify(settings, null, 2));
     res.json({ ok: true, patterns: settings.svcPatterns });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Tier levels
+app.get('/api/settings/tier-levels', (req, res) => {
+  res.json(settings.tierLevels || ['T0', 'T1', 'T2']);
+});
+
+app.put('/api/settings/tier-levels', (req, res) => {
+  try {
+    const { levels } = req.body;
+    if (!Array.isArray(levels)) return res.status(400).json({ error: 'levels must be an array' });
+    settings.tierLevels = levels.map(l => String(l).trim()).filter(Boolean);
+    if (settings.tierLevels.length === 0) settings.tierLevels = ['T0', 'T1', 'T2'];
+    fs.writeFileSync(path.join(__dirname, 'settings.json'), JSON.stringify(settings, null, 2));
+    res.json({ ok: true, levels: settings.tierLevels });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Set computer tier
+app.put('/api/computers/:name/tier', (req, res) => {
+  try {
+    const { tier } = req.body;
+    if (tier == null) return res.status(400).json({ error: 'tier is required' });
+    const ok = db.setComputerTier(req.params.name, String(tier));
+    if (!ok) return res.status(404).json({ error: 'Computer not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Set account tier
+app.put('/api/accounts/:name/tier', (req, res) => {
+  try {
+    const { tier } = req.body;
+    if (tier == null) return res.status(400).json({ error: 'tier is required' });
+    const ok = db.setAccountTier(req.params.name, String(tier));
+    if (!ok) return res.status(404).json({ error: 'Account not found' });
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

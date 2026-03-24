@@ -41,6 +41,7 @@ function initSchema() {
       id      INTEGER PRIMARY KEY AUTOINCREMENT,
       name    TEXT NOT NULL UNIQUE COLLATE NOCASE,
       ou      TEXT DEFAULT '',
+      tier    TEXT DEFAULT '',
       first_seen TEXT NOT NULL DEFAULT (datetime('now')),
       last_seen  TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -60,6 +61,7 @@ function initSchema() {
     CREATE TABLE IF NOT EXISTS accounts (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      tier       TEXT DEFAULT '',
       first_seen TEXT NOT NULL DEFAULT (datetime('now')),
       last_seen  TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -85,6 +87,18 @@ function initSchema() {
     db.prepare(`SELECT auth_types FROM auth_mappings LIMIT 0`).get();
   } catch {
     db.exec(`ALTER TABLE auth_mappings ADD COLUMN auth_types TEXT NOT NULL DEFAULT ''`);
+  }
+
+  // Migrate: add tier column to computers and accounts if missing
+  try {
+    db.prepare(`SELECT tier FROM computers LIMIT 0`).get();
+  } catch {
+    db.exec(`ALTER TABLE computers ADD COLUMN tier TEXT DEFAULT ''`);
+  }
+  try {
+    db.prepare(`SELECT tier FROM accounts LIMIT 0`).get();
+  } catch {
+    db.exec(`ALTER TABLE accounts ADD COLUMN tier TEXT DEFAULT ''`);
   }
 }
 
@@ -143,6 +157,11 @@ function importData(jsonData, sourceFile) {
       if (!compRow) continue;
       const compId = compRow.id;
       computersCount++;
+
+      // Auto-tier: Domain Controllers → T0 (only if not already tiered)
+      if (/OU=Domain Controllers/i.test(comp.ou || '')) {
+        db.prepare(`UPDATE computers SET tier = 'T0' WHERE id = ? AND (tier IS NULL OR tier = '')`).run(compId);
+      }
 
       // IPs
       if (Array.isArray(comp.ips)) {
@@ -280,7 +299,7 @@ function getDashboardStats(svcPatterns) {
   };
 }
 
-function getComputers({ search, ouFilter, sort, dir, page, limit, svcOnly, svcPatterns }) {
+function getComputers({ search, ouFilter, tierFilter, sort, dir, page, limit, svcOnly, svcPatterns }) {
   const db = getDb();
   const conditions = [];
   const params = [];
@@ -292,6 +311,10 @@ function getComputers({ search, ouFilter, sort, dir, page, limit, svcOnly, svcPa
   if (ouFilter) {
     conditions.push(`c.ou LIKE ?`);
     params.push(`%${ouFilter}%`);
+  }
+  if (tierFilter) {
+    conditions.push(`c.tier = ?`);
+    params.push(tierFilter);
   }
   if (svcOnly && svcPatterns && svcPatterns.length > 0) {
     const svcCond = buildSvcCondition('sa.name', svcPatterns);
@@ -313,7 +336,7 @@ function getComputers({ search, ouFilter, sort, dir, page, limit, svcOnly, svcPa
   `;
 
   const dataSql = `
-    SELECT c.id, c.name, c.ou, c.first_seen, c.last_seen,
+    SELECT c.id, c.name, c.ou, c.tier, c.first_seen, c.last_seen,
            COUNT(DISTINCT m.account_id) as account_count,
            (SELECT COUNT(*) FROM computer_ips ci2 WHERE ci2.computer_id = c.id) as ip_count,
            (SELECT GROUP_CONCAT(ci3.ip, '; ') FROM computer_ips ci3 WHERE ci3.computer_id = c.id) as ips
@@ -351,7 +374,7 @@ function getComputerDetail(name) {
   return { ...computer, ips, accounts };
 }
 
-function getAccounts({ search, sort, dir, page, limit, svcOnly, svcPatterns }) {
+function getAccounts({ search, tierFilter, sort, dir, page, limit, svcOnly, svcPatterns }) {
   const db = getDb();
   const conditions = [];
   const params = [];
@@ -359,6 +382,10 @@ function getAccounts({ search, sort, dir, page, limit, svcOnly, svcPatterns }) {
   if (search) {
     conditions.push(`a.name LIKE ?`);
     params.push(`%${search}%`);
+  }
+  if (tierFilter) {
+    conditions.push(`a.tier = ?`);
+    params.push(tierFilter);
   }
   if (svcOnly && svcPatterns && svcPatterns.length > 0) {
     const svcCond = buildSvcCondition('a.name', svcPatterns);
@@ -375,7 +402,7 @@ function getAccounts({ search, sort, dir, page, limit, svcOnly, svcPatterns }) {
   const countSql = `SELECT COUNT(*) as total FROM accounts a ${where}`;
 
   const dataSql = `
-    SELECT a.id, a.name, a.first_seen, a.last_seen,
+    SELECT a.id, a.name, a.tier, a.first_seen, a.last_seen,
            COUNT(DISTINCT m.computer_id) as computer_count
     FROM accounts a
     LEFT JOIN auth_mappings m ON m.account_id = a.id
@@ -410,7 +437,7 @@ function getAccountDetail(name) {
   return { ...account, computers };
 }
 
-function getNetworkData({ search, accountFilter, ouFilter, svcOnly, svcPatterns }) {
+function getNetworkData({ search, accountFilter, ouFilter, tierFilter, svcOnly, svcPatterns }) {
   const db = getDb();
   const conditions = [];
   const params = [];
@@ -427,6 +454,10 @@ function getNetworkData({ search, accountFilter, ouFilter, svcOnly, svcPatterns 
     conditions.push(`c.ou LIKE ?`);
     params.push(`%${ouFilter}%`);
   }
+  if (tierFilter) {
+    conditions.push(`(c.tier = ? OR a.tier = ?)`);
+    params.push(tierFilter, tierFilter);
+  }
   if (svcOnly && svcPatterns && svcPatterns.length > 0) {
     const svcCond = buildSvcCondition('a.name', svcPatterns);
     conditions.push(svcCond.sql);
@@ -439,7 +470,7 @@ function getNetworkData({ search, accountFilter, ouFilter, svcOnly, svcPatterns 
   const links = [];
 
   const rows = db.prepare(`
-    SELECT c.name as computer_name, a.name as account_name, m.auth_types
+    SELECT c.name as computer_name, c.tier as computer_tier, a.name as account_name, a.tier as account_tier, m.auth_types
     FROM auth_mappings m
     JOIN computers c ON c.id = m.computer_id
     JOIN accounts a ON a.id = m.account_id
@@ -449,10 +480,10 @@ function getNetworkData({ search, accountFilter, ouFilter, svcOnly, svcPatterns 
 
   for (const row of rows) {
     if (!nodes.has('c:' + row.computer_name)) {
-      nodes.set('c:' + row.computer_name, { id: 'c:' + row.computer_name, label: row.computer_name, type: 'computer' });
+      nodes.set('c:' + row.computer_name, { id: 'c:' + row.computer_name, label: row.computer_name, type: 'computer', tier: row.computer_tier || '' });
     }
     if (!nodes.has('a:' + row.account_name)) {
-      nodes.set('a:' + row.account_name, { id: 'a:' + row.account_name, label: row.account_name, type: 'account' });
+      nodes.set('a:' + row.account_name, { id: 'a:' + row.account_name, label: row.account_name, type: 'account', tier: row.account_tier || '' });
     }
     links.push({ source: 'a:' + row.account_name, target: 'c:' + row.computer_name });
   }
@@ -473,7 +504,7 @@ function getExportData({ type, search, accountFilter, ouFilter }) {
     return db.prepare(`
       SELECT c.name as Computer,
              (SELECT GROUP_CONCAT(ci2.ip, '; ') FROM computer_ips ci2 WHERE ci2.computer_id = c.id) as IPs,
-             c.ou as OU,
+             c.ou as OU, c.tier as Tier,
              COUNT(DISTINCT m.account_id) as Account_Count, c.first_seen as First_Seen, c.last_seen as Last_Seen
       FROM computers c
       LEFT JOIN auth_mappings m ON m.computer_id = c.id
@@ -489,7 +520,7 @@ function getExportData({ type, search, accountFilter, ouFilter }) {
     const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
     return db.prepare(`
-      SELECT a.name as Account, COUNT(DISTINCT m.computer_id) as Computer_Count,
+      SELECT a.name as Account, a.tier as Tier, COUNT(DISTINCT m.computer_id) as Computer_Count,
              a.first_seen as First_Seen, a.last_seen as Last_Seen
       FROM accounts a
       LEFT JOIN auth_mappings m ON m.account_id = a.id
@@ -509,8 +540,8 @@ function getExportData({ type, search, accountFilter, ouFilter }) {
   return db.prepare(`
       SELECT c.name as Computer,
            (SELECT GROUP_CONCAT(ci2.ip, '; ') FROM computer_ips ci2 WHERE ci2.computer_id = c.id) as IPs,
-           c.ou as OU,
-           a.name as Account, m.first_seen as First_Seen, m.last_seen as Last_Seen
+           c.ou as OU, c.tier as Computer_Tier,
+           a.name as Account, a.tier as Account_Tier, m.first_seen as First_Seen, m.last_seen as Last_Seen
     FROM auth_mappings m
     JOIN computers c ON c.id = m.computer_id
     JOIN accounts a ON a.id = m.account_id
@@ -541,6 +572,18 @@ function purgeAllData() {
   `);
 }
 
+function setComputerTier(name, tier) {
+  const db = getDb();
+  const result = db.prepare(`UPDATE computers SET tier = ? WHERE name = ? COLLATE NOCASE`).run(tier, name);
+  return result.changes > 0;
+}
+
+function setAccountTier(name, tier) {
+  const db = getDb();
+  const result = db.prepare(`UPDATE accounts SET tier = ? WHERE name = ? COLLATE NOCASE`).run(tier, name);
+  return result.changes > 0;
+}
+
 module.exports = {
   getDb,
   importData,
@@ -553,5 +596,7 @@ module.exports = {
   getExportData,
   getImportRuns,
   deleteImportRun,
-  purgeAllData
+  purgeAllData,
+  setComputerTier,
+  setAccountTier
 };

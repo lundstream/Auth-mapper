@@ -15,6 +15,10 @@ let svcRegex = /svc|service/i;
 let compSvcOnly = false;
 let acctSvcOnly = false;
 let netSvcOnly = false;
+let tierLevels = ['T0', 'T1', 'T2'];
+let compTierFilter = '';
+let acctTierFilter = '';
+let netTierFilter = '';
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -23,6 +27,12 @@ function authBadges(types) {
   if (!types || !Array.isArray(types) || types.length === 0) return '';
   const map = { NTLM: 'ntlm', Kerberos: 'kerberos', Negotiate: 'negotiate' };
   return types.map(t => `<span class="badge-auth badge-${map[t] || 'ntlm'}">${esc(t)}</span>`).join('');
+}
+
+function tierBadge(tier) {
+  if (!tier) return '';
+  const cls = { T0: 'badge-tier-t0', T1: 'badge-tier-t1', T2: 'badge-tier-t2' };
+  return `<span class="badge-tier ${cls[tier] || 'badge-tier-default'}">${esc(tier)}</span>`;
 }
 
 function toast(msg, type = 'success') {
@@ -63,7 +73,9 @@ document.addEventListener('DOMContentLoaded', () => {
   setupImport();
   setupExport();
   setupSvcPatterns();
+  setupTierLevels();
   loadSvcPatterns();
+  loadTierLevels();
   loadDashboard();
 });
 
@@ -351,6 +363,7 @@ async function loadComputers() {
   if (compSearch) params.set('q', wildcardToLike(compSearch));
   if (compOuFilter) params.set('ou', wildcardToLike(compOuFilter));
   if (compSvcOnly) params.set('svcOnly', '1');
+  if (compTierFilter) params.set('tier', compTierFilter);
 
   try {
     const r = await fetch('/api/computers?' + params);
@@ -366,7 +379,7 @@ async function loadComputers() {
 function renderComputers(computers) {
   const body = document.getElementById('compBody');
   if (computers.length === 0) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:40px;">No computers found.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:40px;">No computers found.</td></tr>';
     return;
   }
   body.innerHTML = computers.map(c => `
@@ -374,6 +387,7 @@ function renderComputers(computers) {
       <td><strong>${esc(c.name)}</strong></td>
       <td style="font-size:12px;color:var(--text2);">${esc(c.ips || '-')}</td>
       <td style="font-size:11px;color:var(--text3);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.ou)}">${esc(c.ou || '-')}</td>
+      <td>${tierBadge(c.tier)}</td>
       <td><span class="badge ${c.account_count > 10 ? 'badge-yellow' : 'badge-blue'}">${c.account_count}</span></td>
       <td style="font-size:12px;color:var(--text2);">${fmtDate(c.last_seen)}</td>
     </tr>
@@ -406,6 +420,12 @@ async function openComputerDetail(name) {
         <div class="detail-item"><div class="dl">OU</div><div class="dv" style="font-size:12px;">${esc(data.ou || 'Unknown')}</div></div>
         <div class="detail-item"><div class="dl">IP Addresses</div><div class="dv">${data.ips.length > 0 ? data.ips.map(ip => esc(ip)).join(', ') : '-'}</div></div>
         <div class="detail-item"><div class="dl">First / Last Seen</div><div class="dv">${fmtDate(data.first_seen)} / ${fmtDate(data.last_seen)}</div></div>
+        <div class="detail-item"><div class="dl">Tier</div><div class="dv">
+          <select class="search-input" id="compTierSelect" style="width:120px;padding:4px 8px;">
+            <option value=""${!data.tier ? ' selected' : ''}>No Tier</option>
+            ${tierLevels.map(t => `<option value="${esc(t)}"${data.tier === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
+          </select>
+        </div></div>
       </div>
       <h3 style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;">
         Authenticated Accounts (${data.accounts.length})
@@ -426,6 +446,23 @@ async function openComputerDetail(name) {
         </table>
       </div>
     `;
+
+    // Wire up tier change for computer
+    const compTierSel = document.getElementById('compTierSelect');
+    if (compTierSel) {
+      compTierSel.addEventListener('change', async () => {
+        try {
+          const r = await fetch('/api/computers/' + encodeURIComponent(data.name) + '/tier', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tier: compTierSel.value })
+          });
+          const result = await r.json();
+          if (result.error) { toast(result.error, 'error'); return; }
+          toast('Tier updated');
+          loadComputers();
+        } catch (err) { toast('Failed: ' + err.message, 'error'); }
+      });
+    }
   } catch (err) {
     body.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${esc(err.message)}</p></div>`;
   }
@@ -460,6 +497,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const compSvcSel = document.getElementById('compSvcFilter');
   if (compSvcSel) compSvcSel.addEventListener('change', () => { compSvcOnly = compSvcSel.value === 'svc'; compPage = 1; loadComputers(); });
+  const compTierSel = document.getElementById('compTierFilter');
+  if (compTierSel) compTierSel.addEventListener('change', () => { compTierFilter = compTierSel.value; compPage = 1; loadComputers(); });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -472,6 +511,7 @@ async function loadAccounts() {
   });
   if (acctSearch) params.set('q', wildcardToLike(acctSearch));
   if (acctSvcOnly) params.set('svcOnly', '1');
+  if (acctTierFilter) params.set('tier', acctTierFilter);
 
   try {
     const r = await fetch('/api/accounts?' + params);
@@ -487,7 +527,7 @@ async function loadAccounts() {
 function renderAccounts(accounts) {
   const body = document.getElementById('acctBody');
   if (accounts.length === 0) {
-    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:40px;">No accounts found.</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:40px;">No accounts found.</td></tr>';
     return;
   }
   body.innerHTML = accounts.map(a => {
@@ -495,6 +535,7 @@ function renderAccounts(accounts) {
     return `
       <tr data-name="${esc(a.name)}">
         <td><strong>${esc(a.name)}</strong> ${isSvc ? '<span class="badge badge-yellow">SVC</span>' : ''}</td>
+        <td>${tierBadge(a.tier)}</td>
         <td><span class="badge ${a.computer_count > 10 ? 'badge-yellow' : 'badge-blue'}">${a.computer_count}</span></td>
         <td style="font-size:12px;color:var(--text2);">${fmtDate(a.first_seen)}</td>
         <td style="font-size:12px;color:var(--text2);">${fmtDate(a.last_seen)}</td>
@@ -530,6 +571,12 @@ async function openAccountDetail(name) {
         <div class="detail-item"><div class="dl">Computers Used</div><div class="dv">${data.computers.length}</div></div>
         <div class="detail-item"><div class="dl">First Seen</div><div class="dv">${fmtDate(data.first_seen)}</div></div>
         <div class="detail-item"><div class="dl">Last Seen</div><div class="dv">${fmtDate(data.last_seen)}</div></div>
+        <div class="detail-item"><div class="dl">Tier</div><div class="dv">
+          <select class="search-input" id="acctTierSelect" style="width:120px;padding:4px 8px;">
+            <option value=""${!data.tier ? ' selected' : ''}>No Tier</option>
+            ${tierLevels.map(t => `<option value="${esc(t)}"${data.tier === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
+          </select>
+        </div></div>
       </div>
       <h3 style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;">
         Computers Where This Account Authenticated (${data.computers.length})
@@ -552,6 +599,23 @@ async function openAccountDetail(name) {
         </table>
       </div>
     `;
+
+    // Wire up tier change for account
+    const acctTierSel = document.getElementById('acctTierSelect');
+    if (acctTierSel) {
+      acctTierSel.addEventListener('change', async () => {
+        try {
+          const r = await fetch('/api/accounts/' + encodeURIComponent(data.name) + '/tier', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tier: acctTierSel.value })
+          });
+          const result = await r.json();
+          if (result.error) { toast(result.error, 'error'); return; }
+          toast('Tier updated');
+          loadAccounts();
+        } catch (err) { toast('Failed: ' + err.message, 'error'); }
+      });
+    }
   } catch (err) {
     body.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${esc(err.message)}</p></div>`;
   }
@@ -581,6 +645,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const acctSvcSel = document.getElementById('acctSvcFilter');
   if (acctSvcSel) acctSvcSel.addEventListener('change', () => { acctSvcOnly = acctSvcSel.value === 'svc'; acctPage = 1; loadAccounts(); });
+  const acctTierSel = document.getElementById('acctTierFilter');
+  if (acctTierSel) acctTierSel.addEventListener('change', () => { acctTierFilter = acctTierSel.value; acctPage = 1; loadAccounts(); });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -622,6 +688,7 @@ async function loadNetwork() {
   if (acctFilter) params.set('account', wildcardToLike(acctFilter));
   if (ouFilter) params.set('ou', wildcardToLike(ouFilter));
   if (netSvcOnly) params.set('svcOnly', '1');
+  if (netTierFilter) params.set('tier', netTierFilter);
 
   try {
     const r = await fetch('/api/network?' + params);
@@ -865,6 +932,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (netAcct) netAcct.addEventListener('input', () => { clearTimeout(netTimer); netTimer = setTimeout(loadNetwork, 500); });
   if (netOu) netOu.addEventListener('input', () => { clearTimeout(netTimer); netTimer = setTimeout(loadNetwork, 500); });
   if (netSvcSel) netSvcSel.addEventListener('change', () => { netSvcOnly = netSvcSel.value === 'svc'; loadNetwork(); });
+  const netTierSel = document.getElementById('netTierFilter');
+  if (netTierSel) netTierSel.addEventListener('change', () => { netTierFilter = netTierSel.value; loadNetwork(); });
   const netRefresh = document.getElementById('netRefreshBtn');
   if (netRefresh) netRefresh.addEventListener('click', loadNetwork);
 });
@@ -999,4 +1068,84 @@ function downloadExport(type, extraParams) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── TIER LEVELS ──────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+async function loadTierLevels() {
+  try {
+    const r = await fetch('/api/settings/tier-levels');
+    const levels = await r.json();
+    if (Array.isArray(levels) && levels.length > 0) {
+      tierLevels = levels;
+    }
+    renderTierLevels();
+    populateTierFilters();
+  } catch (err) {
+    console.error('Failed to load tier levels:', err);
+  }
+}
+
+function populateTierFilters() {
+  ['compTierFilter', 'acctTierFilter', 'netTierFilter'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All Tiers</option>' +
+      tierLevels.map(t => `<option value="${esc(t)}"${current === t ? ' selected' : ''}>${esc(t)}</option>`).join('');
+  });
+}
+
+function setupTierLevels() {
+  const addBtn = document.getElementById('tierLevelAddBtn');
+  const input = document.getElementById('tierLevelInput');
+  if (addBtn) addBtn.addEventListener('click', addTierLevel);
+  if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') addTierLevel(); });
+}
+
+function renderTierLevels() {
+  const el = document.getElementById('tierLevelList');
+  if (!el) return;
+  const cls = { T0: 'badge-tier-t0', T1: 'badge-tier-t1', T2: 'badge-tier-t2' };
+  el.innerHTML = tierLevels.map(t =>
+    `<span class="badge-tier ${cls[t] || 'badge-tier-default'}" style="cursor:pointer;font-size:13px;padding:4px 12px;" title="Click to remove" data-level="${esc(t)}">${esc(t)} \u00d7</span>`
+  ).join('');
+  el.querySelectorAll('.badge-tier').forEach(b => {
+    b.addEventListener('click', () => removeTierLevel(b.dataset.level));
+  });
+}
+
+async function addTierLevel() {
+  const input = document.getElementById('tierLevelInput');
+  const val = input.value.trim();
+  if (!val) return;
+  if (tierLevels.includes(val)) { toast('Tier level already exists', 'error'); return; }
+  await saveTierLevels([...tierLevels, val]);
+  input.value = '';
+}
+
+async function removeTierLevel(level) {
+  const newLevels = tierLevels.filter(l => l !== level);
+  if (newLevels.length === 0) { toast('At least one tier level is required', 'error'); return; }
+  await saveTierLevels(newLevels);
+}
+
+async function saveTierLevels(levels) {
+  try {
+    const r = await fetch('/api/settings/tier-levels', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ levels })
+    });
+    const result = await r.json();
+    if (result.error) { toast(result.error, 'error'); return; }
+    tierLevels = result.levels;
+    renderTierLevels();
+    populateTierFilters();
+    toast('Tier levels updated');
+  } catch (err) {
+    toast('Failed to save tier levels: ' + err.message, 'error');
+  }
 }
