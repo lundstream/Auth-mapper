@@ -365,10 +365,17 @@ try {
         $computerName = if ($workstation) { $workstation } else { $DomainController }
         $account = Resolve-AccountName -UserName $targetUser -Domain $targetDomain
 
-        # Use actual auth protocol from event (Kerberos, NTLM, Negotiate)
-        $authPkg = [string]$props[10].Value
-        if ($authPkg -like 'NTLM*' -or $authPkg -eq 'NtLmSsp') { $authType = 'NTLM' }
-        elseif ($authPkg -eq 'Kerberos') { $authType = 'Kerberos' }
+        # Determine actual auth protocol from event properties
+        # [10] AuthenticationPackageName is usually 'Negotiate' (SPNEGO wrapper)
+        # [14] LmPackageName reveals the actual sub-protocol: '-' = Kerberos, 'NTLM V*' = NTLM
+        $authPkg   = [string]$props[10].Value
+        $lmPkg     = [string]$props[14].Value
+        if ($authPkg -eq 'Kerberos') { $authType = 'Kerberos' }
+        elseif ($authPkg -like 'NTLM*' -or $authPkg -eq 'NtLmSsp') { $authType = 'NTLM' }
+        elseif ($authPkg -eq 'Negotiate') {
+            if ($lmPkg -like 'NTLM*') { $authType = 'NTLM' }
+            else { $authType = 'Kerberos' }
+        }
         else { $authType = 'Negotiate' }
 
         Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account -AuthType $authType
