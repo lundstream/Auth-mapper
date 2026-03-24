@@ -27,14 +27,17 @@ Visualize which accounts authenticate against which servers by collecting data f
 - **gMSA support** — Group Managed Service Accounts are detected via AD query, cached locally, and tracked alongside regular accounts (not filtered out like machine accounts)
 - **UPN resolution** — One-time AD export of UPN→sAMAccountName mappings cached to `upn_cache.json`; auto-refreshes after 24h (configurable via `-UpnCacheHours`)
 - **Tier tagging** — Configurable tier levels (default T0/T1/T2) for classifying computers and accounts; Domain Controllers are auto-tagged T0 on import; manual tagging via detail modals; filterable on all views
-- **Web dashboard** — Dark-themed UI with stats, charts, filterable tables, network graph
-- **Computers tab** — List all computers/servers with IPs, OUs, tier badges, and account counts; sortable, filterable, and tier-filterable
-- **Accounts tab** — All unique accounts with computer counts, auth type badges (Kerberos/NTLM), and tier badges; filter by pattern (e.g. `svc*`, `admin*`) or tier
-- **Network map** — Interactive canvas-based graph showing account → computer authentication relationships; filter by OU, account, tier, or service accounts only
-- **Service account detection** — Configurable naming patterns (e.g. `svc`, `service`, `batch`) with "Service Accounts Only" filter on all views
-- **Import system** — Drag & drop JSON files, import from server path, supports multiple import runs with data merging
+- **Owner tagging** — Assign ownership to computers and accounts from a configurable list of teams/owners; filterable on Computers, Accounts, and Network Map tabs
+- **Web dashboard** — Dark/light themed UI with 8 KPI cards (computers, accounts, mappings, imports, tier coverage, owner assignment, auth protocols), growth badges showing changes since last import, and 4 charts (top accounts, top computers, account types, distribution)
+- **Computers tab** — List all computers/servers with IPs, OUs, tier badges, owner badges, and account counts; sortable, filterable by search, OU, tier, and owner
+- **Accounts tab** — All unique accounts with computer counts, auth type badges (Kerberos/NTLM), tier and owner badges; filter by pattern, OU, tier, or owner
+- **Network map** — Interactive canvas-based graph showing account → computer authentication relationships; filter by search, OU, tier, owner, or service accounts only
+- **OU autocomplete** — Custom Chrome-style dropdown on all OU filters with top-5 matching results, bold keyword highlighting, keyboard navigation, and full-path tooltip on hover
+- **Service account detection** — Configurable naming patterns (e.g. `svc`, `service`, `gmsa`) with "Service Accounts Only" filter on all views
+- **Coverage gap analysis** — Import AD computer/account snapshots to compare against observed auth data; identify machines and accounts in AD that have no authentication activity
+- **Import system** — Drag & drop JSON files, import from server path, supports multiple import runs with data merging; import history with per-run counts
 - **CSV export** — Export computers, accounts, or full mappings to CSV; supports filtered exports
-- **Backup & restore** — Download a full JSON backup of all data (computers, accounts, mappings, IPs, tiers, import history) and settings; restore from backup replaces all data
+- **Backup & restore** — Download a full JSON backup of all data (computers, accounts, mappings, IPs, tiers, owners, import history) and settings; restore from backup replaces all data
 
 ## Quick Start
 
@@ -121,12 +124,14 @@ Copy `settings.example.json` to `settings.json` and adjust:
 {
   "port": 3002,
   "svcPatterns": ["svc", "service", "gmsa"],
-  "tierLevels": ["T0", "T1", "T2"]
+  "tierLevels": ["T0", "T1", "T2"],
+  "owners": ["Team A", "Team B"]
 }
 ```
 
 - `svcPatterns` — substrings used to identify service accounts (case-insensitive)
 - `tierLevels` — tier classification levels for computers and accounts (DCs are auto-tagged T0)
+- `owners` — list of team/owner names available for assignment to computers and accounts
 
 Both are configurable from the web UI under **Data & Settings**.
 
