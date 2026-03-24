@@ -315,8 +315,8 @@ function getComputers({ search, ouFilter, sort, dir, page, limit, svcOnly, svcPa
   const dataSql = `
     SELECT c.id, c.name, c.ou, c.first_seen, c.last_seen,
            COUNT(DISTINCT m.account_id) as account_count,
-           COUNT(DISTINCT ci.ip) as ip_count,
-           GROUP_CONCAT(DISTINCT ci.ip, '; ') as ips
+           (SELECT COUNT(*) FROM computer_ips ci2 WHERE ci2.computer_id = c.id) as ip_count,
+           (SELECT GROUP_CONCAT(ci3.ip, '; ') FROM computer_ips ci3 WHERE ci3.computer_id = c.id) as ips
     FROM computers c
     LEFT JOIN auth_mappings m ON m.computer_id = c.id
     LEFT JOIN computer_ips ci ON ci.computer_id = c.id
@@ -399,10 +399,9 @@ function getAccountDetail(name) {
 
   const computers = db.prepare(`
     SELECT c.name, c.ou, m.first_seen, m.last_seen, m.auth_types,
-           GROUP_CONCAT(DISTINCT ci.ip, '; ') as ips
+           (SELECT GROUP_CONCAT(ci2.ip, '; ') FROM computer_ips ci2 WHERE ci2.computer_id = c.id) as ips
     FROM auth_mappings m
     JOIN computers c ON c.id = m.computer_id
-    LEFT JOIN computer_ips ci ON ci.computer_id = c.id
     WHERE m.account_id = ?
     GROUP BY c.id
     ORDER BY c.name
@@ -472,10 +471,11 @@ function getExportData({ type, search, accountFilter, ouFilter }) {
     const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
     return db.prepare(`
-      SELECT c.name as Computer, GROUP_CONCAT(DISTINCT ci.ip, '; ') as IPs, c.ou as OU,
+      SELECT c.name as Computer,
+             (SELECT GROUP_CONCAT(ci2.ip, '; ') FROM computer_ips ci2 WHERE ci2.computer_id = c.id) as IPs,
+             c.ou as OU,
              COUNT(DISTINCT m.account_id) as Account_Count, c.first_seen as First_Seen, c.last_seen as Last_Seen
       FROM computers c
-      LEFT JOIN computer_ips ci ON ci.computer_id = c.id
       LEFT JOIN auth_mappings m ON m.computer_id = c.id
       ${where}
       GROUP BY c.id ORDER BY c.name
@@ -507,14 +507,15 @@ function getExportData({ type, search, accountFilter, ouFilter }) {
   const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
   return db.prepare(`
-      SELECT c.name as Computer, GROUP_CONCAT(DISTINCT ci.ip, '; ') as IPs, c.ou as OU,
+      SELECT c.name as Computer,
+           (SELECT GROUP_CONCAT(ci2.ip, '; ') FROM computer_ips ci2 WHERE ci2.computer_id = c.id) as IPs,
+           c.ou as OU,
            a.name as Account, m.first_seen as First_Seen, m.last_seen as Last_Seen
     FROM auth_mappings m
     JOIN computers c ON c.id = m.computer_id
     JOIN accounts a ON a.id = m.account_id
-    LEFT JOIN computer_ips ci ON ci.computer_id = c.id
     ${where}
-    GROUP BY m.id ORDER BY c.name, a.name
+    ORDER BY c.name, a.name
   `).all(...params);
 }
 
