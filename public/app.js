@@ -1263,7 +1263,7 @@ function setupOuAutocomplete(inputId, dropdownId, onSelect) {
     dropdown.innerHTML = matches.map((o, i) => {
       const idx = o.toLowerCase().indexOf(q);
       const highlighted = esc(o.substring(0, idx)) + '<b>' + esc(o.substring(idx, idx + q.length)) + '</b>' + esc(o.substring(idx + q.length));
-      return `<div class="ou-dropdown-item" data-idx="${i}" data-value="${esc(o)}">${highlighted}</div>`;
+      return `<div class="ou-dropdown-item" data-idx="${i}" data-value="${esc(o)}" title="${esc(o)}">${highlighted}</div>`;
     }).join('');
     dropdown.classList.add('open');
   }
