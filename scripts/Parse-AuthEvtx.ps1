@@ -197,6 +197,9 @@ if (-not $gmsaNeedsRefresh -and (Test-Path $gmsaCachePath)) {
 if ($gmsaNeedsRefresh) {
     $gmsaSet = Build-GmsaCache -CachePath $gmsaCachePath
 }
+if (-not $gmsaSet) {
+    $gmsaSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+}
 
 # ── Auto-export from DC if requested ───────────────────────────────────────
 if ($PSCmdlet.ParameterSetName -eq 'ExportAndParse') {

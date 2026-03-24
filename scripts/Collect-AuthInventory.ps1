@@ -176,6 +176,9 @@ if (-not $gmsaNeedsRefresh -and (Test-Path $gmsaCachePath)) {
 if ($gmsaNeedsRefresh) {
     $gmsaSet = Build-GmsaCache -CachePath $gmsaCachePath
 }
+if (-not $gmsaSet) {
+    $gmsaSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+}
 
 Write-Host "[*] Time range        : $($cutoff.ToString('yyyy-MM-dd HH:mm')) to $($startTime.ToString('yyyy-MM-dd HH:mm'))" -ForegroundColor Yellow
 Write-Host "[*] Hours back        : $HoursBack" -ForegroundColor Yellow
