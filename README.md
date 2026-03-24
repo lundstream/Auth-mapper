@@ -23,9 +23,12 @@ Visualize which accounts authenticate against which servers by collecting data f
 
 - **PowerShell collection script** — Queries DC security logs (Event 4624, 4768, 4769, 4776) for logon, Kerberos TGT/service ticket, and NTLM events; resolves computer OUs from AD, outputs JSON
 - **Jumphost parser** — Export .evtx from DC, parse locally on any domain-joined machine (minimal DC load for large environments)
+- **Auth protocol detection** — Identifies actual authentication protocol (Kerberos or NTLM) per account via `LmPackageName`, displayed as color-coded badges in the UI
+- **gMSA support** — Group Managed Service Accounts are detected via AD query, cached locally, and tracked alongside regular accounts (not filtered out like machine accounts)
+- **UPN resolution** — One-time AD export of UPN→sAMAccountName mappings cached to `upn_cache.json`; auto-refreshes after 24h (configurable via `-UpnCacheHours`)
 - **Web dashboard** — Dark-themed UI with stats, charts, filterable tables, network graph
 - **Computers tab** — List all computers/servers with IPs, OUs, and account counts; sortable and filterable
-- **Accounts tab** — All unique accounts with computer counts; filter by pattern (e.g. `svc*`, `admin*`)
+- **Accounts tab** — All unique accounts with computer counts and auth type badges (Kerberos/NTLM); filter by pattern (e.g. `svc*`, `admin*`)
 - **Network map** — Interactive canvas-based graph showing account → computer authentication relationships; filter by OU, account, or service accounts only
 - **Service account detection** — Configurable naming patterns (e.g. `svc`, `service`, `batch`) with "Service Accounts Only" filter on all views
 - **Import system** — Drag & drop JSON files, import from server path, supports multiple import runs with data merging
@@ -40,6 +43,15 @@ Visualize which accounts authenticate against which servers by collecting data f
 ```powershell
 .\scripts\Collect-AuthInventory.ps1 -HoursBack 168
 ```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `-HoursBack` | 24 | How far back to search in the security log |
+| `-MaxEvents` | 0 (all) | Limit the number of events to process |
+| `-DomainController` | localhost | Target DC hostname |
+| `-OutputPath` | script dir | Where to write the JSON output |
+| `-UpnCacheHours` | 24 | Hours before UPN/gMSA caches are refreshed |
+| `-RefreshUpnCache` | — | Force rebuild of UPN and gMSA caches |
 
 **Option B — Export + parse on jumphost (recommended for large environments):**
 
@@ -56,6 +68,16 @@ wevtutil epl Security \\jumphost\c$\temp\dc01_security.evtx /q:"*[System[(EventI
 ```powershell
 .\scripts\Parse-AuthEvtx.ps1 -ExportFromDC DC01.contoso.com -HoursBack 72
 ```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `-EvtxPath` | — | Path to an exported .evtx file (Option B) |
+| `-ExportFromDC` | — | DC FQDN to auto-export from (Option C) |
+| `-DomainController` | — | DC name used for OU lookups and computer resolution |
+| `-HoursBack` | 0 (all) | Filter events to the last N hours |
+| `-OutputPath` | script dir | Where to write the JSON output |
+| `-UpnCacheHours` | 24 | Hours before UPN/gMSA caches are refreshed |
+| `-RefreshUpnCache` | — | Force rebuild of UPN and gMSA caches |
 
 Output: `auth_inventory_YYYYMMDD_HHmmss.json`
 
