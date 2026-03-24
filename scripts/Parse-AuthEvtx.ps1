@@ -259,7 +259,7 @@ function Resolve-AccountName {
 
     # Plain username: prefix with domain if available
     $d = if ($Domain) { Normalize-DomainName $Domain } else { '' }
-    return if ($d -and $d -ne '-') { "$d\$UserName" } else { $UserName }
+    if ($d -and $d -ne '-') { return "$d\$UserName" } else { return $UserName }
 }
 
 # ── Helper: Add an auth mapping ─────────────────────────────────────────────
