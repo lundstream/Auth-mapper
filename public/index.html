@@ -40,6 +40,12 @@ body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* ── Scrollbar ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
 /* ── Topbar ────────────────────────────────────────────────────────────── */
 .topbar {
   background: var(--card); border-bottom: 1px solid var(--border);
