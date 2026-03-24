@@ -284,6 +284,45 @@ app.put('/api/accounts/:name/tier', (req, res) => {
   }
 });
 
+// Backup – download full database as JSON
+app.get('/api/backup', (req, res) => {
+  try {
+    const data = db.getBackupData();
+    data.settings = {
+      svcPatterns: settings.svcPatterns || ['svc', 'service'],
+      tierLevels: settings.tierLevels || ['T0', 'T1', 'T2']
+    };
+    const filename = `auth_mapper_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Restore – upload backup JSON to replace all data
+app.post('/api/restore', (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || !data._backup) return res.status(400).json({ error: 'Invalid backup file' });
+    const result = db.restoreBackupData(data);
+    // Restore settings if included
+    if (data.settings) {
+      if (Array.isArray(data.settings.svcPatterns) && data.settings.svcPatterns.length) {
+        settings.svcPatterns = data.settings.svcPatterns;
+      }
+      if (Array.isArray(data.settings.tierLevels) && data.settings.tierLevels.length) {
+        settings.tierLevels = data.settings.tierLevels;
+      }
+      fs.writeFileSync(path.join(__dirname, 'settings.json'), JSON.stringify(settings, null, 2));
+    }
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── Start ─────────────────────────────────────────────────────────────── */
 
 app.listen(PORT, () => {

@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupModals();
   setupImport();
   setupExport();
+  setupBackup();
   setupSvcPatterns();
   setupTierLevels();
   loadSvcPatterns();
@@ -1072,6 +1073,53 @@ function downloadExport(type, extraParams) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── BACKUP & RESTORE ─────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+function setupBackup() {
+  document.getElementById('backupBtn').addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = '/api/backup';
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast('Backup download started');
+  });
+
+  const restoreFileInput = document.getElementById('restoreFile');
+  document.getElementById('restoreBtn').addEventListener('click', () => restoreFileInput.click());
+  restoreFileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!confirm('Restoring a backup will REPLACE all existing data and settings. Continue?')) {
+      restoreFileInput.value = '';
+      return;
+    }
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data._backup) { showToast('Invalid backup file', true); restoreFileInput.value = ''; return; }
+      const r = await fetch('/api/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: text
+      });
+      if (!r.ok) { const err = await r.json().catch(() => ({})); showToast(err.error || 'Restore failed', true); restoreFileInput.value = ''; return; }
+      const result = await r.json();
+      showToast(`Restored ${result.computers} computers, ${result.accounts} accounts, ${result.mappings} mappings`);
+      loadDashboard();
+      loadImportHistory();
+      loadSvcPatterns();
+      loadTierLevels();
+    } catch (err) {
+      showToast('Failed to read backup file', true);
+    }
+    restoreFileInput.value = '';
+  });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ */

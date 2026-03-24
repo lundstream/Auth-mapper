@@ -324,7 +324,7 @@ body.modal-open { overflow: hidden; }
     <button class="tab-btn" data-tab="computers">Computers</button>
     <button class="tab-btn" data-tab="accounts">Accounts</button>
     <button class="tab-btn" data-tab="network">Network Map</button>
-    <button class="tab-btn" data-tab="import">Import &amp; Export</button>
+    <button class="tab-btn" data-tab="import">Data &amp; Settings</button>
   </div>
 
   <!-- ════════════════════════════════════════════════════════════════════ -->
@@ -538,6 +538,20 @@ body.modal-open { overflow: hidden; }
         <button class="btn btn-outline" id="exportComputersBtn"><i data-feather="monitor" style="width:14px;height:14px"></i> Export Computers CSV</button>
         <button class="btn btn-outline" id="exportAccountsBtn"><i data-feather="users" style="width:14px;height:14px"></i> Export Accounts CSV</button>
         <button class="btn btn-outline" id="exportMappingsBtn"><i data-feather="link" style="width:14px;height:14px"></i> Export All Mappings CSV</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Backup &amp; Restore</h2>
+      </div>
+      <div style="padding:20px;">
+        <p style="font-size:13px;color:var(--text3);margin-bottom:16px;">Download a full backup of all data and settings as JSON, or restore from a previous backup. Restoring <strong>replaces</strong> all existing data.</p>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+          <button class="btn btn-primary" id="backupBtn"><i data-feather="download" style="width:14px;height:14px"></i> Download Backup</button>
+          <input type="file" id="restoreFile" accept=".json" style="display:none;">
+          <button class="btn btn-outline" id="restoreBtn"><i data-feather="upload" style="width:14px;height:14px"></i> Restore from Backup</button>
+        </div>
       </div>
     </div>
 

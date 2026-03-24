@@ -584,6 +584,113 @@ function setAccountTier(name, tier) {
   return result.changes > 0;
 }
 
+function getBackupData() {
+  const db = getDb();
+  const computers = db.prepare(`SELECT * FROM computers ORDER BY name`).all();
+  const computerIps = db.prepare(`SELECT ci.*, c.name as computer_name FROM computer_ips ci JOIN computers c ON c.id = ci.computer_id ORDER BY c.name, ci.ip`).all();
+  const accounts = db.prepare(`SELECT * FROM accounts ORDER BY name`).all();
+  const mappings = db.prepare(`
+    SELECT c.name as computer_name, a.name as account_name, m.auth_types, m.first_seen, m.last_seen
+    FROM auth_mappings m
+    JOIN computers c ON c.id = m.computer_id
+    JOIN accounts a ON a.id = m.account_id
+    ORDER BY c.name, a.name
+  `).all();
+  const importRuns = db.prepare(`SELECT * FROM import_runs ORDER BY imported_at DESC`).all();
+
+  return {
+    _backup: true,
+    _version: 1,
+    _created: new Date().toISOString(),
+    computers: computers.map(c => ({
+      name: c.name,
+      ou: c.ou || '',
+      tier: c.tier || '',
+      first_seen: c.first_seen,
+      last_seen: c.last_seen,
+      ips: computerIps.filter(ci => ci.computer_id === c.id).map(ci => ci.ip)
+    })),
+    accounts: accounts.map(a => ({
+      name: a.name,
+      tier: a.tier || '',
+      first_seen: a.first_seen,
+      last_seen: a.last_seen
+    })),
+    mappings,
+    importRuns
+  };
+}
+
+function restoreBackupData(data) {
+  const db = getDb();
+
+  const doRestore = db.transaction(() => {
+    // Clear all existing data
+    db.exec(`
+      DELETE FROM auth_mappings;
+      DELETE FROM computer_ips;
+      DELETE FROM accounts;
+      DELETE FROM computers;
+      DELETE FROM import_runs;
+    `);
+
+    // Restore computers
+    const insertComputer = db.prepare(`
+      INSERT INTO computers (name, ou, tier, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)
+    `);
+    const getComputerId = db.prepare(`SELECT id FROM computers WHERE name = ? COLLATE NOCASE`);
+
+    for (const c of (data.computers || [])) {
+      insertComputer.run(c.name, c.ou || '', c.tier || '', c.first_seen, c.last_seen);
+      const row = getComputerId.get(c.name);
+      if (!row) continue;
+      if (Array.isArray(c.ips)) {
+        for (const ip of c.ips) {
+          if (ip) db.prepare(`INSERT INTO computer_ips (computer_id, ip) VALUES (?, ?)`).run(row.id, ip);
+        }
+      }
+    }
+
+    // Restore accounts
+    const insertAccount = db.prepare(`
+      INSERT INTO accounts (name, tier, first_seen, last_seen) VALUES (?, ?, ?, ?)
+    `);
+    for (const a of (data.accounts || [])) {
+      insertAccount.run(a.name, a.tier || '', a.first_seen, a.last_seen);
+    }
+
+    // Restore mappings
+    const getAccountId = db.prepare(`SELECT id FROM accounts WHERE name = ? COLLATE NOCASE`);
+    const insertMapping = db.prepare(`
+      INSERT INTO auth_mappings (computer_id, account_id, auth_types, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)
+    `);
+    for (const m of (data.mappings || [])) {
+      const compRow = getComputerId.get(m.computer_name);
+      const acctRow = getAccountId.get(m.account_name);
+      if (compRow && acctRow) {
+        insertMapping.run(compRow.id, acctRow.id, m.auth_types || '', m.first_seen, m.last_seen);
+      }
+    }
+
+    // Restore import runs
+    const insertRun = db.prepare(`
+      INSERT INTO import_runs (source_file, domain_controller, hours_back, collected_at, computers_count, accounts_count, mappings_count, imported_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const r of (data.importRuns || [])) {
+      insertRun.run(r.source_file, r.domain_controller, r.hours_back, r.collected_at, r.computers_count, r.accounts_count, r.mappings_count, r.imported_at);
+    }
+  });
+
+  doRestore();
+
+  return {
+    computers: (data.computers || []).length,
+    accounts: (data.accounts || []).length,
+    mappings: (data.mappings || []).length
+  };
+}
+
 module.exports = {
   getDb,
   importData,
@@ -598,5 +705,7 @@ module.exports = {
   deleteImportRun,
   purgeAllData,
   setComputerTier,
-  setAccountTier
+  setAccountTier,
+  getBackupData,
+  restoreBackupData
 };
