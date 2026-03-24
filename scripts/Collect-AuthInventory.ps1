@@ -5,7 +5,8 @@
 
 .DESCRIPTION
     Queries Windows Security event logs on a Domain Controller for logon events
-    (Event ID 4624 - Successful logon, 4769 - Kerberos service ticket, 4776 - Credential validation via NTLM).
+    (Event ID 4624 - Successful logon, 4768 - Kerberos TGT request,
+    4769 - Kerberos service ticket, 4776 - Credential validation via NTLM).
     Extracts unique computer targets, their IP addresses, the OU of the computer
     object in AD, and the accounts that authenticated against each computer.
 
@@ -95,6 +96,24 @@ function Normalize-ComputerName {
     return $n
 }
 
+# ── Helper: Reverse-resolve IP to hostname ──────────────────────────────────
+$dnsCache = @{}
+function Resolve-IpToHostname {
+    param([string]$IpAddress)
+    if ([string]::IsNullOrWhiteSpace($IpAddress) -or $IpAddress -eq '-' -or $IpAddress -eq '::1' -or $IpAddress -eq '127.0.0.1') { return $null }
+    $ip = $IpAddress -replace '^::ffff:', ''
+    if ($dnsCache.ContainsKey($ip)) { return $dnsCache[$ip] }
+    try {
+        $entry = [System.Net.Dns]::GetHostEntry($ip)
+        $hostname = ($entry.HostName -split '\.')[0].ToUpper()
+        $dnsCache[$ip] = $hostname
+        return $hostname
+    } catch {
+        $dnsCache[$ip] = $null
+        return $null
+    }
+}
+
 # ── Helper: Add an auth mapping ─────────────────────────────────────────────
 function Add-AuthMapping {
     param(
@@ -127,7 +146,7 @@ function Add-AuthMapping {
 }
 
 # ── Query Event ID 4624 (Successful Logon) ─────────────────────────────────
-Write-Host "[1/4] Querying Event ID 4624 (Successful Logon)..." -ForegroundColor Cyan
+Write-Host "[1/5] Querying Event ID 4624 (Successful Logon)..." -ForegroundColor Cyan
 
 $filterXml4624 = @"
 <QueryList>
@@ -186,7 +205,7 @@ try {
 }
 
 # ── Query Event ID 4776 (NTLM Credential Validation) ───────────────────────
-Write-Host "[2/4] Querying Event ID 4776 (NTLM Credential Validation)..." -ForegroundColor Cyan
+Write-Host "[2/5] Querying Event ID 4776 (NTLM Credential Validation)..." -ForegroundColor Cyan
 
 $filterXml4776 = @"
 <QueryList>
@@ -230,7 +249,7 @@ try {
 }
 
 # ── Query Event ID 4769 (Kerberos Service Ticket) ──────────────────────────
-Write-Host "[3/4] Querying Event ID 4769 (Kerberos Service Ticket)..." -ForegroundColor Cyan
+Write-Host "[3/5] Querying Event ID 4769 (Kerberos Service Ticket)..." -ForegroundColor Cyan
 
 $filterXml4769 = @"
 <QueryList>
@@ -288,8 +307,64 @@ try {
     Write-Host "    Warning: Could not query 4769 events: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
+# ── Query Event ID 4768 (Kerberos TGT Request) ────────────────────────────
+Write-Host "[4/5] Querying Event ID 4768 (Kerberos TGT Request)..." -ForegroundColor Cyan
+
+$filterXml4768 = @"
+<QueryList>
+  <Query Id="0" Path="Security">
+    <Select Path="Security">
+      *[System[(EventID=4768) and TimeCreated[timediff(@SystemTime) &lt;= $(($HoursBack * 3600 * 1000))]]]
+    </Select>
+  </Query>
+</QueryList>
+"@
+
+try {
+    $params4768 = @{
+        FilterXml    = $filterXml4768
+        ComputerName = $DomainController
+        ErrorAction  = "SilentlyContinue"
+    }
+    if ($MaxEvents -gt 0) { $params4768['MaxEvents'] = $MaxEvents }
+
+    $events4768 = Get-WinEvent @params4768
+
+    $count4768 = 0
+    foreach ($evt in $events4768) {
+        $props = $evt.Properties
+        if ($props.Count -lt 10) { continue }
+
+        # Only successful requests (Status 0x0)
+        $status = $props[6].Value
+        if ($status -ne 0) { continue }
+
+        $targetUser   = [string]$props[0].Value
+        $targetDomain = [string]$props[1].Value
+        $ipAddress    = [string]$props[9].Value
+
+        # Skip machine accounts
+        if ($targetUser -match '\$$') { continue }
+        if ([string]::IsNullOrWhiteSpace($targetUser)) { continue }
+
+        # Reverse-resolve IP to hostname for the source workstation
+        $ip = $ipAddress -replace '^::ffff:', ''
+        $computerName = Resolve-IpToHostname $ip
+        if (-not $computerName) { $computerName = $ip }
+        if (-not $computerName -or $computerName -eq '-') { continue }
+
+        $account = if ($targetDomain -and $targetDomain -ne '-') { "$targetDomain\$targetUser" } else { $targetUser }
+
+        Add-AuthMapping -Computer $computerName -IpAddress $ip -Account $account
+        $count4768++
+    }
+    Write-Host "    Found $count4768 relevant TGT events from $($events4768.Count) total 4768 events" -ForegroundColor Green
+} catch {
+    Write-Host "    Warning: Could not query 4768 events: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
 # ── Resolve OUs ─────────────────────────────────────────────────────────────
-Write-Host "[4/4] Resolving OUs for $($computerMap.Count) computers..." -ForegroundColor Cyan
+Write-Host "[5/5] Resolving OUs for $($computerMap.Count) computers..." -ForegroundColor Cyan
 $ouResolved = 0
 foreach ($compName in @($computerMap.Keys)) {
     $ou = Get-ComputerOU $compName

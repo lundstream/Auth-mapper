@@ -7,7 +7,7 @@
     Designed to run on a domain-joined jumphost (not the DC). The workflow is:
 
     1. Export filtered events from the DC using wevtutil (fast, minimal DC load):
-         wevtutil epl Security C:\Temp\dc_security.evtx /q:"*[System[(EventID=4624 or EventID=4769 or EventID=4776)]]" /r:DC01.contoso.com
+         wevtutil epl Security C:\Temp\dc_security.evtx /q:"*[System[(EventID=4624 or EventID=4768 or EventID=4769 or EventID=4776)]]" /r:DC01.contoso.com
 
     2. Copy the .evtx file to this machine (or use a network share).
 
@@ -36,7 +36,7 @@
 .EXAMPLE
     # Manual two-step: export on DC, parse on jumphost
     # (on DC or via WinRM):
-    wevtutil epl Security \\jumphost\c$\temp\dc01_security.evtx /q:"*[System[(EventID=4624 or EventID=4769 or EventID=4776)]]"
+    wevtutil epl Security \\jumphost\c$\temp\dc01_security.evtx /q:"*[System[(EventID=4624 or EventID=4768 or EventID=4769 or EventID=4776)]]"
     # (on jumphost):
     .\Parse-AuthEvtx.ps1 -EvtxPath C:\temp\dc01_security.evtx -DomainController DC01
 
@@ -84,7 +84,7 @@ if ($PSCmdlet.ParameterSetName -eq 'ExportAndParse') {
     $exportFile = Join-Path $tempDir "dc_security_$(Get-Date -Format 'yyyyMMdd_HHmmss').evtx"
 
     # Build XPath filter: always filter by EventID, optionally by time
-    $xpathParts = @("EventID=4624 or EventID=4769 or EventID=4776")
+    $xpathParts = @("EventID=4624 or EventID=4768 or EventID=4769 or EventID=4776")
     if ($HoursBack -gt 0) {
         $ms = $HoursBack * 3600 * 1000
         $xpathParts += "TimeCreated[timediff(@SystemTime) <= $ms]"
@@ -180,6 +180,24 @@ function Normalize-ComputerName {
     return $n
 }
 
+# ── Helper: Reverse-resolve IP to hostname ──────────────────────────────────
+$dnsCache = @{}
+function Resolve-IpToHostname {
+    param([string]$IpAddress)
+    if ([string]::IsNullOrWhiteSpace($IpAddress) -or $IpAddress -eq '-' -or $IpAddress -eq '::1' -or $IpAddress -eq '127.0.0.1') { return $null }
+    $ip = $IpAddress -replace '^::ffff:', ''
+    if ($dnsCache.ContainsKey($ip)) { return $dnsCache[$ip] }
+    try {
+        $entry = [System.Net.Dns]::GetHostEntry($ip)
+        $hostname = ($entry.HostName -split '\.')[0].ToUpper()
+        $dnsCache[$ip] = $hostname
+        return $hostname
+    } catch {
+        $dnsCache[$ip] = $null
+        return $null
+    }
+}
+
 # ── Helper: Add an auth mapping ─────────────────────────────────────────────
 function Add-AuthMapping {
     param(
@@ -214,6 +232,7 @@ $stepParse = $stepOffset + 1
 Write-Host "[$stepParse/$(3 + $stepOffset)] Parsing .evtx files..." -ForegroundColor Cyan
 
 $total4624 = 0
+$total4768 = 0
 $total4769 = 0
 $total4776 = 0
 $totalRaw  = 0
@@ -222,6 +241,7 @@ foreach ($evtxFile in $evtxFiles) {
     Write-Host "    Parsing $($evtxFile.Name)..." -ForegroundColor Gray
 
     $fileCount4624 = 0
+    $fileCount4768 = 0
     $fileCount4769 = 0
     $fileCount4776 = 0
     $fileRaw = 0
@@ -230,7 +250,7 @@ foreach ($evtxFile in $evtxFiles) {
     $query = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery(
         $evtxFile.FullName,
         [System.Diagnostics.Eventing.Reader.PathType]::FilePath,
-        "*[System[(EventID=4624 or EventID=4769 or EventID=4776)]]"
+        "*[System[(EventID=4624 or EventID=4768 or EventID=4769 or EventID=4776)]]"
     )
 
     try {
@@ -285,6 +305,37 @@ foreach ($evtxFile in $evtxFiles) {
 
                 Add-AuthMapping -Computer $computerName -IpAddress $ipAddress -Account $account
                 $fileCount4624++
+            }
+            elseif ($id -eq 4768) {
+                # 4768 Kerberos TGT Request (AS-REQ) — maps account to source workstation
+                # Properties: [0]TargetUserName [1]TargetDomainName [2]TargetSid [3]ServiceName
+                # [4]ServiceSid [5]TicketOptions [6]Status [7]TicketEncryptionType
+                # [8]PreAuthType [9]IpAddress [10]IpPort
+                $props = $evt.Properties
+                if ($props.Count -lt 10) { $evt.Dispose(); continue }
+
+                # Only successful requests (Status 0x0)
+                $status = $props[6].Value
+                if ($status -ne 0) { $evt.Dispose(); continue }
+
+                $targetUser   = [string]$props[0].Value
+                $targetDomain = [string]$props[1].Value
+                $ipAddress    = [string]$props[9].Value
+
+                # Skip machine accounts
+                if ($targetUser -match '\$$') { $evt.Dispose(); continue }
+                if ([string]::IsNullOrWhiteSpace($targetUser)) { $evt.Dispose(); continue }
+
+                # Reverse-resolve IP to hostname for the source workstation
+                $ip = $ipAddress -replace '^::ffff:', ''
+                $computerName = Resolve-IpToHostname $ip
+                if (-not $computerName) { $computerName = $ip }  # fall back to IP
+                if (-not $computerName -or $computerName -eq '-') { $evt.Dispose(); continue }
+
+                $account = if ($targetDomain -and $targetDomain -ne '-') { "$targetDomain\$targetUser" } else { $targetUser }
+
+                Add-AuthMapping -Computer $computerName -IpAddress $ip -Account $account
+                $fileCount4768++
             }
             elseif ($id -eq 4769) {
                 # 4769 Kerberos Service Ticket (TGS-REQ)
@@ -344,12 +395,13 @@ foreach ($evtxFile in $evtxFiles) {
 
     $totalRaw += $fileRaw
     $total4624 += $fileCount4624
+    $total4768 += $fileCount4768
     $total4769 += $fileCount4769
     $total4776 += $fileCount4776
-    Write-Host "    $($evtxFile.Name): $fileCount4624 logon + $fileCount4769 Kerberos + $fileCount4776 NTLM (from $fileRaw raw)" -ForegroundColor Green
+    Write-Host "    $($evtxFile.Name): $fileCount4624 logon + $fileCount4768 TGT + $fileCount4769 TGS + $fileCount4776 NTLM (from $fileRaw raw)" -ForegroundColor Green
 }
 
-Write-Host "    Total: $total4624 logon + $total4769 Kerberos + $total4776 NTLM from $totalRaw raw events" -ForegroundColor Green
+Write-Host "    Total: $total4624 logon + $total4768 TGT + $total4769 TGS + $total4776 NTLM from $totalRaw raw events" -ForegroundColor Green
 
 # ── Resolve OUs ─────────────────────────────────────────────────────────────
 $stepOU = $stepOffset + 2
@@ -413,7 +465,8 @@ Write-Host "================================================================" -F
 Write-Host "  Files parsed       : $($evtxFiles.Count)" -ForegroundColor White
 Write-Host "  Raw events         : $totalRaw" -ForegroundColor White
 Write-Host "  Logon (4624)       : $total4624" -ForegroundColor White
-Write-Host "  Kerberos (4769)    : $total4769" -ForegroundColor White
+Write-Host "  Kerberos TGT (4768): $total4768" -ForegroundColor White
+Write-Host "  Kerberos TGS (4769): $total4769" -ForegroundColor White
 Write-Host "  NTLM (4776)       : $total4776" -ForegroundColor White
 Write-Host "  Computers found    : $($computerMap.Count)" -ForegroundColor White
 Write-Host "  Unique accounts    : $uniqueAccounts" -ForegroundColor White
