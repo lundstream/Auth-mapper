@@ -41,10 +41,10 @@ $ErrorActionPreference = "Continue"
 
 # ── Banner ──────────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║       Service Account Authentication Inventory              ║" -ForegroundColor Cyan
-Write-Host "║       Collecting from DC security logs                      ║" -ForegroundColor Cyan
-Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "  Service Account Authentication Inventory                      " -ForegroundColor Cyan
+Write-Host "  Collecting from DC security logs                              " -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 
 $startTime = Get-Date
@@ -272,9 +272,9 @@ $output | ConvertTo-Json -Depth 5 | Set-Content -Path $filePath -Encoding UTF8
 $elapsed = (Get-Date) - $startTime
 
 Write-Host ""
-Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║  Collection Complete                                        ║" -ForegroundColor Green
-Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Green
+Write-Host "  Collection Complete                                          " -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Green
 Write-Host "  Computers found    : $($computerMap.Count)" -ForegroundColor White
 Write-Host "  Unique accounts    : $uniqueAccounts" -ForegroundColor White
 Write-Host "  Total mappings     : $totalAccounts" -ForegroundColor White

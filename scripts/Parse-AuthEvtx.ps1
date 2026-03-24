@@ -66,10 +66,10 @@ $ErrorActionPreference = "Continue"
 
 # ── Banner ──────────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║       Service Account Authentication Inventory              ║" -ForegroundColor Cyan
-Write-Host "║       Local .evtx parser (jumphost mode)                    ║" -ForegroundColor Cyan
-Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "  Service Account Authentication Inventory                      " -ForegroundColor Cyan
+Write-Host "  Local .evtx parser (jumphost mode)                            " -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 
 $startTime = Get-Date
@@ -350,9 +350,9 @@ if ($PSCmdlet.ParameterSetName -eq 'ExportAndParse') {
 $elapsed = (Get-Date) - $startTime
 
 Write-Host ""
-Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║  Parsing Complete                                           ║" -ForegroundColor Green
-Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Green
+Write-Host "  Parsing Complete                                              " -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Green
 Write-Host "  Files parsed       : $($evtxFiles.Count)" -ForegroundColor White
 Write-Host "  Raw events         : $totalRaw" -ForegroundColor White
 Write-Host "  Logon (4624)       : $total4624" -ForegroundColor White
