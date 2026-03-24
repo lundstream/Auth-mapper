@@ -100,6 +100,18 @@ function initSchema() {
   } catch {
     db.exec(`ALTER TABLE accounts ADD COLUMN tier TEXT DEFAULT ''`);
   }
+
+  // Migrate: add owner column to computers and accounts if missing
+  try {
+    db.prepare(`SELECT owner FROM computers LIMIT 0`).get();
+  } catch {
+    db.exec(`ALTER TABLE computers ADD COLUMN owner TEXT DEFAULT ''`);
+  }
+  try {
+    db.prepare(`SELECT owner FROM accounts LIMIT 0`).get();
+  } catch {
+    db.exec(`ALTER TABLE accounts ADD COLUMN owner TEXT DEFAULT ''`);
+  }
 }
 
 /* ── Import ────────────────────────────────────────────────────────────── */
@@ -336,7 +348,7 @@ function getComputers({ search, ouFilter, tierFilter, sort, dir, page, limit, sv
   `;
 
   const dataSql = `
-    SELECT c.id, c.name, c.ou, c.tier, c.first_seen, c.last_seen,
+    SELECT c.id, c.name, c.ou, c.tier, c.owner, c.first_seen, c.last_seen,
            COUNT(DISTINCT m.account_id) as account_count,
            (SELECT COUNT(*) FROM computer_ips ci2 WHERE ci2.computer_id = c.id) as ip_count,
            (SELECT GROUP_CONCAT(ci3.ip, '; ') FROM computer_ips ci3 WHERE ci3.computer_id = c.id) as ips
@@ -402,7 +414,7 @@ function getAccounts({ search, tierFilter, sort, dir, page, limit, svcOnly, svcP
   const countSql = `SELECT COUNT(*) as total FROM accounts a ${where}`;
 
   const dataSql = `
-    SELECT a.id, a.name, a.tier, a.first_seen, a.last_seen,
+    SELECT a.id, a.name, a.tier, a.owner, a.first_seen, a.last_seen,
            COUNT(DISTINCT m.computer_id) as computer_count
     FROM accounts a
     LEFT JOIN auth_mappings m ON m.account_id = a.id
@@ -470,7 +482,7 @@ function getNetworkData({ search, accountFilter, ouFilter, tierFilter, svcOnly, 
   const links = [];
 
   const rows = db.prepare(`
-    SELECT c.name as computer_name, c.tier as computer_tier, a.name as account_name, a.tier as account_tier, m.auth_types
+    SELECT c.name as computer_name, c.tier as computer_tier, c.owner as computer_owner, a.name as account_name, a.tier as account_tier, a.owner as account_owner, m.auth_types
     FROM auth_mappings m
     JOIN computers c ON c.id = m.computer_id
     JOIN accounts a ON a.id = m.account_id
@@ -480,10 +492,10 @@ function getNetworkData({ search, accountFilter, ouFilter, tierFilter, svcOnly, 
 
   for (const row of rows) {
     if (!nodes.has('c:' + row.computer_name)) {
-      nodes.set('c:' + row.computer_name, { id: 'c:' + row.computer_name, label: row.computer_name, type: 'computer', tier: row.computer_tier || '' });
+      nodes.set('c:' + row.computer_name, { id: 'c:' + row.computer_name, label: row.computer_name, type: 'computer', tier: row.computer_tier || '', owner: row.computer_owner || '' });
     }
     if (!nodes.has('a:' + row.account_name)) {
-      nodes.set('a:' + row.account_name, { id: 'a:' + row.account_name, label: row.account_name, type: 'account', tier: row.account_tier || '' });
+      nodes.set('a:' + row.account_name, { id: 'a:' + row.account_name, label: row.account_name, type: 'account', tier: row.account_tier || '', owner: row.account_owner || '' });
     }
     links.push({ source: 'a:' + row.account_name, target: 'c:' + row.computer_name });
   }
@@ -504,7 +516,7 @@ function getExportData({ type, search, accountFilter, ouFilter }) {
     return db.prepare(`
       SELECT c.name as Computer,
              (SELECT GROUP_CONCAT(ci2.ip, '; ') FROM computer_ips ci2 WHERE ci2.computer_id = c.id) as IPs,
-             c.ou as OU, c.tier as Tier,
+             c.ou as OU, c.tier as Tier, c.owner as Owner,
              COUNT(DISTINCT m.account_id) as Account_Count, c.first_seen as First_Seen, c.last_seen as Last_Seen
       FROM computers c
       LEFT JOIN auth_mappings m ON m.computer_id = c.id
@@ -520,7 +532,7 @@ function getExportData({ type, search, accountFilter, ouFilter }) {
     const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
     return db.prepare(`
-      SELECT a.name as Account, a.tier as Tier, COUNT(DISTINCT m.computer_id) as Computer_Count,
+      SELECT a.name as Account, a.tier as Tier, a.owner as Owner, COUNT(DISTINCT m.computer_id) as Computer_Count,
              a.first_seen as First_Seen, a.last_seen as Last_Seen
       FROM accounts a
       LEFT JOIN auth_mappings m ON m.account_id = a.id
@@ -540,8 +552,8 @@ function getExportData({ type, search, accountFilter, ouFilter }) {
   return db.prepare(`
       SELECT c.name as Computer,
            (SELECT GROUP_CONCAT(ci2.ip, '; ') FROM computer_ips ci2 WHERE ci2.computer_id = c.id) as IPs,
-           c.ou as OU, c.tier as Computer_Tier,
-           a.name as Account, a.tier as Account_Tier, m.first_seen as First_Seen, m.last_seen as Last_Seen
+           c.ou as OU, c.tier as Computer_Tier, c.owner as Computer_Owner,
+           a.name as Account, a.tier as Account_Tier, a.owner as Account_Owner, m.first_seen as First_Seen, m.last_seen as Last_Seen
     FROM auth_mappings m
     JOIN computers c ON c.id = m.computer_id
     JOIN accounts a ON a.id = m.account_id
@@ -584,6 +596,18 @@ function setAccountTier(name, tier) {
   return result.changes > 0;
 }
 
+function setComputerOwner(name, owner) {
+  const db = getDb();
+  const result = db.prepare(`UPDATE computers SET owner = ? WHERE name = ? COLLATE NOCASE`).run(owner, name);
+  return result.changes > 0;
+}
+
+function setAccountOwner(name, owner) {
+  const db = getDb();
+  const result = db.prepare(`UPDATE accounts SET owner = ? WHERE name = ? COLLATE NOCASE`).run(owner, name);
+  return result.changes > 0;
+}
+
 function getBackupData() {
   const db = getDb();
   const computers = db.prepare(`SELECT * FROM computers ORDER BY name`).all();
@@ -606,6 +630,7 @@ function getBackupData() {
       name: c.name,
       ou: c.ou || '',
       tier: c.tier || '',
+      owner: c.owner || '',
       first_seen: c.first_seen,
       last_seen: c.last_seen,
       ips: computerIps.filter(ci => ci.computer_id === c.id).map(ci => ci.ip)
@@ -613,6 +638,7 @@ function getBackupData() {
     accounts: accounts.map(a => ({
       name: a.name,
       tier: a.tier || '',
+      owner: a.owner || '',
       first_seen: a.first_seen,
       last_seen: a.last_seen
     })),
@@ -636,12 +662,12 @@ function restoreBackupData(data) {
 
     // Restore computers
     const insertComputer = db.prepare(`
-      INSERT INTO computers (name, ou, tier, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)
+      INSERT INTO computers (name, ou, tier, owner, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)
     `);
     const getComputerId = db.prepare(`SELECT id FROM computers WHERE name = ? COLLATE NOCASE`);
 
     for (const c of (data.computers || [])) {
-      insertComputer.run(c.name, c.ou || '', c.tier || '', c.first_seen, c.last_seen);
+      insertComputer.run(c.name, c.ou || '', c.tier || '', c.owner || '', c.first_seen, c.last_seen);
       const row = getComputerId.get(c.name);
       if (!row) continue;
       if (Array.isArray(c.ips)) {
@@ -653,10 +679,10 @@ function restoreBackupData(data) {
 
     // Restore accounts
     const insertAccount = db.prepare(`
-      INSERT INTO accounts (name, tier, first_seen, last_seen) VALUES (?, ?, ?, ?)
+      INSERT INTO accounts (name, tier, owner, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)
     `);
     for (const a of (data.accounts || [])) {
-      insertAccount.run(a.name, a.tier || '', a.first_seen, a.last_seen);
+      insertAccount.run(a.name, a.tier || '', a.owner || '', a.first_seen, a.last_seen);
     }
 
     // Restore mappings
@@ -706,6 +732,8 @@ module.exports = {
   purgeAllData,
   setComputerTier,
   setAccountTier,
+  setComputerOwner,
+  setAccountOwner,
   getBackupData,
   restoreBackupData
 };

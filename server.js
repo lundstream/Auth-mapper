@@ -284,13 +284,57 @@ app.put('/api/accounts/:name/tier', (req, res) => {
   }
 });
 
+// Set computer owner
+app.put('/api/computers/:name/owner', (req, res) => {
+  try {
+    const { owner } = req.body;
+    if (owner == null) return res.status(400).json({ error: 'owner is required' });
+    const ok = db.setComputerOwner(req.params.name, String(owner));
+    if (!ok) return res.status(404).json({ error: 'Computer not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Set account owner
+app.put('/api/accounts/:name/owner', (req, res) => {
+  try {
+    const { owner } = req.body;
+    if (owner == null) return res.status(400).json({ error: 'owner is required' });
+    const ok = db.setAccountOwner(req.params.name, String(owner));
+    if (!ok) return res.status(404).json({ error: 'Account not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Owners list
+app.get('/api/settings/owners', (req, res) => {
+  res.json(settings.owners || []);
+});
+
+app.put('/api/settings/owners', (req, res) => {
+  try {
+    const { owners } = req.body;
+    if (!Array.isArray(owners)) return res.status(400).json({ error: 'owners must be an array' });
+    settings.owners = owners.map(o => String(o).trim()).filter(Boolean);
+    fs.writeFileSync(path.join(__dirname, 'settings.json'), JSON.stringify(settings, null, 2));
+    res.json({ ok: true, owners: settings.owners });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Backup – download full database as JSON
 app.get('/api/backup', (req, res) => {
   try {
     const data = db.getBackupData();
     data.settings = {
       svcPatterns: settings.svcPatterns || ['svc', 'service'],
-      tierLevels: settings.tierLevels || ['T0', 'T1', 'T2']
+      tierLevels: settings.tierLevels || ['T0', 'T1', 'T2'],
+      owners: settings.owners || []
     };
     const filename = `auth_mapper_backup_${new Date().toISOString().slice(0, 10)}.json`;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -314,6 +358,9 @@ app.post('/api/restore', (req, res) => {
       }
       if (Array.isArray(data.settings.tierLevels) && data.settings.tierLevels.length) {
         settings.tierLevels = data.settings.tierLevels;
+      }
+      if (Array.isArray(data.settings.owners)) {
+        settings.owners = data.settings.owners;
       }
       fs.writeFileSync(path.join(__dirname, 'settings.json'), JSON.stringify(settings, null, 2));
     }

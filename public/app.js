@@ -16,6 +16,7 @@ let compSvcOnly = false;
 let acctSvcOnly = false;
 let netSvcOnly = false;
 let tierLevels = ['T0', 'T1', 'T2'];
+let owners = [];
 let compTierFilter = '';
 let acctTierFilter = '';
 let netTierFilter = '';
@@ -33,6 +34,11 @@ function tierBadge(tier) {
   if (!tier) return '';
   const cls = { T0: 'badge-tier-t0', T1: 'badge-tier-t1', T2: 'badge-tier-t2' };
   return `<span class="badge-tier ${cls[tier] || 'badge-tier-default'}">${esc(tier)}</span>`;
+}
+
+function ownerBadge(owner) {
+  if (!owner) return '';
+  return `<span class="badge badge-blue" style="font-size:11px;">${esc(owner)}</span>`;
 }
 
 function toast(msg, type = 'success') {
@@ -75,8 +81,10 @@ document.addEventListener('DOMContentLoaded', () => {
   setupBackup();
   setupSvcPatterns();
   setupTierLevels();
+  setupOwners();
   loadSvcPatterns();
   loadTierLevels();
+  loadOwners();
   loadDashboard();
 });
 
@@ -108,6 +116,7 @@ function setupTabs() {
       else if (btn.dataset.tab === 'accounts') loadAccounts();
       else if (btn.dataset.tab === 'network') loadNetwork();
       else if (btn.dataset.tab === 'import') loadImportHistory();
+      else if (btn.dataset.tab === 'settings') { /* settings are loaded on init */ }
     });
   });
 }
@@ -380,7 +389,7 @@ async function loadComputers() {
 function renderComputers(computers) {
   const body = document.getElementById('compBody');
   if (computers.length === 0) {
-    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:40px;">No computers found.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:40px;">No computers found.</td></tr>';
     return;
   }
   body.innerHTML = computers.map(c => `
@@ -389,6 +398,7 @@ function renderComputers(computers) {
       <td style="font-size:12px;color:var(--text2);">${esc(c.ips || '-')}</td>
       <td style="font-size:11px;color:var(--text3);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.ou)}">${esc(c.ou || '-')}</td>
       <td>${tierBadge(c.tier)}</td>
+      <td>${ownerBadge(c.owner)}</td>
       <td><span class="badge ${c.account_count > 10 ? 'badge-yellow' : 'badge-blue'}">${c.account_count}</span></td>
       <td style="font-size:12px;color:var(--text2);">${fmtDate(c.last_seen)}</td>
     </tr>
@@ -427,6 +437,12 @@ async function openComputerDetail(name) {
             ${tierLevels.map(t => `<option value="${esc(t)}"${data.tier === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
           </select>
         </div></div>
+        <div class="detail-item"><div class="dl">Owner</div><div class="dv">
+          <select class="search-input" id="compOwnerSelect" style="width:180px;padding:4px 8px;">
+            <option value=""${!data.owner ? ' selected' : ''}>No Owner</option>
+            ${owners.map(o => `<option value="${esc(o)}"${data.owner === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+          </select>
+        </div></div>
         <div class="detail-item"><div class="dl">Accounts</div><div class="dv">${data.accounts.length}</div></div>
       </div>
       <h3 style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;">
@@ -462,6 +478,24 @@ async function openComputerDetail(name) {
           const result = await r.json();
           if (result.error) { toast(result.error, 'error'); return; }
           toast('Tier updated');
+          loadComputers();
+        } catch (err) { toast('Failed: ' + err.message, 'error'); }
+      });
+    }
+
+    // Wire up owner change for computer
+    const compOwnerSel = document.getElementById('compOwnerSelect');
+    if (compOwnerSel) {
+      compOwnerSel.addEventListener('change', async () => {
+        try {
+          const r = await fetch('/api/computers/' + encodeURIComponent(data.name) + '/owner', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ owner: compOwnerSel.value })
+          });
+          if (!r.ok) { toast('Failed to update owner (HTTP ' + r.status + ')', 'error'); return; }
+          const result = await r.json();
+          if (result.error) { toast(result.error, 'error'); return; }
+          toast('Owner updated');
           loadComputers();
         } catch (err) { toast('Failed: ' + err.message, 'error'); }
       });
@@ -530,7 +564,7 @@ async function loadAccounts() {
 function renderAccounts(accounts) {
   const body = document.getElementById('acctBody');
   if (accounts.length === 0) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:40px;">No accounts found.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:40px;">No accounts found.</td></tr>';
     return;
   }
   body.innerHTML = accounts.map(a => {
@@ -539,6 +573,7 @@ function renderAccounts(accounts) {
       <tr data-name="${esc(a.name)}">
         <td><strong>${esc(a.name)}</strong> ${isSvc ? '<span class="badge badge-yellow">SVC</span>' : ''}</td>
         <td>${tierBadge(a.tier)}</td>
+        <td>${ownerBadge(a.owner)}</td>
         <td><span class="badge ${a.computer_count > 10 ? 'badge-yellow' : 'badge-blue'}">${a.computer_count}</span></td>
         <td style="font-size:12px;color:var(--text2);">${fmtDate(a.first_seen)}</td>
         <td style="font-size:12px;color:var(--text2);">${fmtDate(a.last_seen)}</td>
@@ -580,6 +615,12 @@ async function openAccountDetail(name) {
             ${tierLevels.map(t => `<option value="${esc(t)}"${data.tier === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
           </select>
         </div></div>
+        <div class="detail-item"><div class="dl">Owner</div><div class="dv">
+          <select class="search-input" id="acctOwnerSelect" style="width:180px;padding:4px 8px;">
+            <option value=""${!data.owner ? ' selected' : ''}>No Owner</option>
+            ${owners.map(o => `<option value="${esc(o)}"${data.owner === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+          </select>
+        </div></div>
         <div class="detail-item"><div class="dl">Auth Mappings</div><div class="dv">${data.computers.length}</div></div>
       </div>
       <h3 style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;">
@@ -617,6 +658,24 @@ async function openAccountDetail(name) {
           const result = await r.json();
           if (result.error) { toast(result.error, 'error'); return; }
           toast('Tier updated');
+          loadAccounts();
+        } catch (err) { toast('Failed: ' + err.message, 'error'); }
+      });
+    }
+
+    // Wire up owner change for account
+    const acctOwnerSel = document.getElementById('acctOwnerSelect');
+    if (acctOwnerSel) {
+      acctOwnerSel.addEventListener('change', async () => {
+        try {
+          const r = await fetch('/api/accounts/' + encodeURIComponent(data.name) + '/owner', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ owner: acctOwnerSel.value })
+          });
+          if (!r.ok) { toast('Failed to update owner (HTTP ' + r.status + ')', 'error'); return; }
+          const result = await r.json();
+          if (result.error) { toast(result.error, 'error'); return; }
+          toast('Owner updated');
           loadAccounts();
         } catch (err) { toast('Failed: ' + err.message, 'error'); }
       });
@@ -1087,7 +1146,7 @@ function setupBackup() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    showToast('Backup download started');
+    toast('Backup download started');
   });
 
   const restoreFileInput = document.getElementById('restoreFile');
@@ -1102,21 +1161,22 @@ function setupBackup() {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      if (!data._backup) { showToast('Invalid backup file', true); restoreFileInput.value = ''; return; }
+      if (!data._backup) { toast('Invalid backup file', 'error'); restoreFileInput.value = ''; return; }
       const r = await fetch('/api/restore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: text
       });
-      if (!r.ok) { const err = await r.json().catch(() => ({})); showToast(err.error || 'Restore failed', true); restoreFileInput.value = ''; return; }
+      if (!r.ok) { const err = await r.json().catch(() => ({})); toast(err.error || 'Restore failed', 'error'); restoreFileInput.value = ''; return; }
       const result = await r.json();
-      showToast(`Restored ${result.computers} computers, ${result.accounts} accounts, ${result.mappings} mappings`);
+      toast(`Restored ${result.computers} computers, ${result.accounts} accounts, ${result.mappings} mappings`);
       loadDashboard();
       loadImportHistory();
       loadSvcPatterns();
       loadTierLevels();
+      loadOwners();
     } catch (err) {
-      showToast('Failed to read backup file', true);
+      toast('Failed to read backup file', 'error');
     }
     restoreFileInput.value = '';
   });
@@ -1199,5 +1259,67 @@ async function saveTierLevels(levels) {
     toast('Tier levels updated');
   } catch (err) {
     toast('Failed to save tier levels: ' + err.message, 'error');
+  }
+}
+
+/* ── OWNERS ───────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+async function loadOwners() {
+  try {
+    const r = await fetch('/api/settings/owners');
+    const list = await r.json();
+    if (Array.isArray(list)) owners = list;
+    renderOwners();
+  } catch (err) {
+    console.error('Failed to load owners:', err);
+  }
+}
+
+function setupOwners() {
+  const addBtn = document.getElementById('ownerAddBtn');
+  const input = document.getElementById('ownerInput');
+  if (addBtn) addBtn.addEventListener('click', addOwner);
+  if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') addOwner(); });
+}
+
+function renderOwners() {
+  const el = document.getElementById('ownerList');
+  if (!el) return;
+  el.innerHTML = owners.map(o =>
+    `<span class="badge badge-blue" style="cursor:pointer;font-size:13px;padding:4px 12px;" title="Click to remove" data-owner="${esc(o)}">${esc(o)} \u00d7</span>`
+  ).join('');
+  el.querySelectorAll('.badge').forEach(b => {
+    b.addEventListener('click', () => removeOwner(b.dataset.owner));
+  });
+}
+
+async function addOwner() {
+  const input = document.getElementById('ownerInput');
+  const val = input.value.trim();
+  if (!val) return;
+  if (owners.includes(val)) { toast('Owner already exists', 'error'); return; }
+  await saveOwners([...owners, val]);
+  input.value = '';
+}
+
+async function removeOwner(owner) {
+  await saveOwners(owners.filter(o => o !== owner));
+}
+
+async function saveOwners(ownersList) {
+  try {
+    const r = await fetch('/api/settings/owners', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owners: ownersList })
+    });
+    const result = await r.json();
+    if (result.error) { toast(result.error, 'error'); return; }
+    owners = result.owners;
+    renderOwners();
+    toast('Owners updated');
+  } catch (err) {
+    toast('Failed to save owners: ' + err.message, 'error');
   }
 }
