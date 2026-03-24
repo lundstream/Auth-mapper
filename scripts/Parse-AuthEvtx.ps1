@@ -59,7 +59,9 @@ param(
 
     [string]$OutputPath = $PSScriptRoot,
     [string]$DomainController = "",
-    [int]$HoursBack = 0
+    [int]$HoursBack = 0,
+    [int]$UpnCacheHours = 24,
+    [switch]$RefreshUpnCache
 )
 
 $ErrorActionPreference = "Continue"
@@ -85,6 +87,64 @@ try {
 } catch { }
 if ($defaultDomain) {
     Write-Host "[*] Default domain    : $defaultDomain" -ForegroundColor Yellow
+}
+
+# ── UPN-to-sAMAccountName cache ────────────────────────────────────────────
+$upnCachePath = Join-Path $PSScriptRoot 'upn_cache.json'
+$upnMap = @{}
+
+function Build-UpnCache {
+    param([string]$CachePath)
+    Write-Host "[*] Building UPN cache from AD..." -ForegroundColor Yellow
+    $map = @{}
+    try {
+        $searcher = New-Object System.DirectoryServices.DirectorySearcher
+        $searcher.Filter = '(&(objectCategory=person)(objectClass=user)(userPrincipalName=*))'
+        $searcher.PropertiesToLoad.AddRange(@('sAMAccountName', 'userPrincipalName'))
+        $searcher.PageSize = 1000
+        $searcher.SizeLimit = 0
+        $results = $searcher.FindAll()
+        foreach ($r in $results) {
+            $upn = [string]$r.Properties['userprincipalname'][0]
+            $sam = [string]$r.Properties['samaccountname'][0]
+            if ($upn -and $sam) {
+                $map[$upn.ToLower()] = $sam
+            }
+        }
+        $results.Dispose()
+        $cache = @{ generated_at = (Get-Date).ToString('o'); entries = $map }
+        $cache | ConvertTo-Json -Depth 3 -Compress | Set-Content -Path $CachePath -Encoding UTF8
+        Write-Host "    Cached $($map.Count) UPN mappings to $(Split-Path $CachePath -Leaf)" -ForegroundColor Green
+    } catch {
+        Write-Host "    Warning: Could not query AD for UPN cache: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "    Will fall back to string-based UPN handling" -ForegroundColor Yellow
+    }
+    return $map
+}
+
+# Load or refresh the UPN cache
+$needsRefresh = $RefreshUpnCache.IsPresent
+if (-not $needsRefresh -and (Test-Path $upnCachePath)) {
+    try {
+        $cacheData = Get-Content $upnCachePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $cacheAge = (Get-Date) - [datetime]$cacheData.generated_at
+        if ($cacheAge.TotalHours -gt $UpnCacheHours) {
+            Write-Host "[*] UPN cache is $([math]::Round($cacheAge.TotalHours, 1))h old, refreshing..." -ForegroundColor Yellow
+            $needsRefresh = $true
+        } else {
+            # Load from cache file
+            $cacheData.entries.PSObject.Properties | ForEach-Object { $upnMap[$_.Name] = $_.Value }
+            Write-Host "[*] UPN cache loaded  : $($upnMap.Count) mappings (age: $([math]::Round($cacheAge.TotalHours, 1))h)" -ForegroundColor Yellow
+        }
+    } catch {
+        $needsRefresh = $true
+    }
+} else {
+    $needsRefresh = $true
+}
+
+if ($needsRefresh) {
+    $upnMap = Build-UpnCache -CachePath $upnCachePath
 }
 
 # ── Auto-export from DC if requested ───────────────────────────────────────
@@ -228,10 +288,17 @@ function Resolve-AccountName {
     # Already in DOMAIN\user format: return as-is
     if ($UserName -match '\\') { return $UserName }
 
-    # UPN format (user@domain.com): split, use domain from suffix
+    # UPN format (user@domain.com): look up sAMAccountName in cache, fallback to prefix
     if ($UserName -match '^([^@]+)@(.+)$') {
-        $user = $Matches[1]
+        $upnLower = $UserName.ToLower()
         $d = Normalize-DomainName $Matches[2]
+        if ($upnMap.Count -gt 0 -and $upnMap.ContainsKey($upnLower)) {
+            $sam = $upnMap[$upnLower]
+            if ($d -and $d -ne '-') { return "$d\$sam" }
+            return $sam
+        }
+        # Fallback: use part before @ as username
+        $user = $Matches[1]
         if ($d -and $d -ne '-') { return "$d\$user" }
         return $user
     }
