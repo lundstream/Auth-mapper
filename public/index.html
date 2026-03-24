@@ -178,6 +178,24 @@ a:hover { text-decoration: underline; }
 }
 .search-input:focus { border-color: var(--accent); }
 
+/* ── OU Autocomplete ────────────────────────────────────────────────────── */
+.ou-autocomplete { position: relative; width: 200px; }
+.ou-autocomplete .search-input { width: 100%; }
+.ou-dropdown {
+  display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 200;
+  background: var(--card); border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  box-shadow: var(--shadow); max-height: 180px; overflow-y: auto;
+}
+.ou-dropdown.open { display: block; }
+.ou-dropdown-item {
+  padding: 7px 14px; font-size: 13px; color: var(--text); cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ou-dropdown-item:hover, .ou-dropdown-item.active {
+  background: var(--accent-bg); color: var(--accent);
+}
+
 /* ── Charts ────────────────────────────────────────────────────────────── */
 .charts-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
@@ -383,7 +401,10 @@ body.modal-open { overflow: hidden; }
         <h2>Computers / Servers</h2>
         <div class="panel-actions">
           <input type="text" class="search-input" id="compSearch" placeholder="Filter by computer name or IP">
-          <input type="text" class="search-input" id="compOuFilter" placeholder="Filter by OU" style="width:200px;" list="ouList">
+          <div class="ou-autocomplete">
+            <input type="text" class="search-input" id="compOuFilter" placeholder="Filter by OU" autocomplete="off">
+            <div class="ou-dropdown" id="compOuDropdown"></div>
+          </div>
           <select class="search-input" id="compTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
           </select>
@@ -426,7 +447,10 @@ body.modal-open { overflow: hidden; }
         <h2>Accounts</h2>
         <div class="panel-actions">
           <input type="text" class="search-input" id="acctSearch" placeholder="Filter by account name">
-          <input type="text" class="search-input" id="acctOuFilter" placeholder="Filter by OU" style="width:200px;" list="ouList">
+          <div class="ou-autocomplete">
+            <input type="text" class="search-input" id="acctOuFilter" placeholder="Filter by OU" autocomplete="off">
+            <div class="ou-dropdown" id="acctOuDropdown"></div>
+          </div>
           <select class="search-input" id="acctTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
           </select>
@@ -468,7 +492,10 @@ body.modal-open { overflow: hidden; }
         <h2>Authentication Network Map</h2>
         <div class="panel-actions">
           <input type="text" class="search-input" id="netSearch" placeholder="Filter by computer or account name">
-          <input type="text" class="search-input" id="netOuFilter" placeholder="Filter by OU" style="width:200px;" list="ouList">
+          <div class="ou-autocomplete">
+            <input type="text" class="search-input" id="netOuFilter" placeholder="Filter by OU" autocomplete="off">
+            <div class="ou-dropdown" id="netOuDropdown"></div>
+          </div>
           <select class="search-input" id="netTierFilter" style="width:130px;">
             <option value="">All Tiers</option>
           </select>
@@ -718,7 +745,6 @@ body.modal-open { overflow: hidden; }
 
 <!-- ── Toast ───────────────────────────────────────────────────────────── -->
 <div id="toast"></div>
-<datalist id="ouList"></datalist>
 
 <script src="app.js"></script>
 </body>

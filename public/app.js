@@ -1239,16 +1239,61 @@ function populateOwnerFilters() {
   });
 }
 
+let ouValues = [];
 async function populateOuFilters() {
   try {
     const r = await fetch('/api/ous');
-    const ous = await r.json();
-    const dl = document.getElementById('ouList');
-    if (dl) dl.innerHTML = ous.map(o => `<option value="${esc(o)}">`).join('');
+    ouValues = await r.json();
   } catch (err) {
     console.error('Failed to load OUs:', err);
   }
 }
+
+function setupOuAutocomplete(inputId, dropdownId, onSelect) {
+  const input = document.getElementById(inputId);
+  const dropdown = document.getElementById(dropdownId);
+  if (!input || !dropdown) return;
+  let activeIdx = -1;
+
+  function show(query) {
+    const q = query.toLowerCase();
+    const matches = q ? ouValues.filter(o => o.toLowerCase().includes(q)).slice(0, 5) : [];
+    if (matches.length === 0) { dropdown.classList.remove('open'); return; }
+    activeIdx = -1;
+    dropdown.innerHTML = matches.map((o, i) => {
+      const idx = o.toLowerCase().indexOf(q);
+      const highlighted = esc(o.substring(0, idx)) + '<b>' + esc(o.substring(idx, idx + q.length)) + '</b>' + esc(o.substring(idx + q.length));
+      return `<div class="ou-dropdown-item" data-idx="${i}" data-value="${esc(o)}">${highlighted}</div>`;
+    }).join('');
+    dropdown.classList.add('open');
+  }
+
+  input.addEventListener('input', () => show(input.value.trim()));
+  input.addEventListener('focus', () => { if (input.value.trim()) show(input.value.trim()); });
+
+  dropdown.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const item = e.target.closest('.ou-dropdown-item');
+    if (item) { input.value = item.dataset.value; dropdown.classList.remove('open'); onSelect(item.dataset.value); }
+  });
+
+  input.addEventListener('keydown', (e) => {
+    const items = dropdown.querySelectorAll('.ou-dropdown-item');
+    if (!dropdown.classList.contains('open') || items.length === 0) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); items.forEach((el, i) => el.classList.toggle('active', i === activeIdx)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); items.forEach((el, i) => el.classList.toggle('active', i === activeIdx)); }
+    else if (e.key === 'Enter' && activeIdx >= 0) { e.preventDefault(); input.value = items[activeIdx].dataset.value; dropdown.classList.remove('open'); onSelect(items[activeIdx].dataset.value); }
+    else if (e.key === 'Escape') { dropdown.classList.remove('open'); }
+  });
+
+  input.addEventListener('blur', () => { dropdown.classList.remove('open'); });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  setupOuAutocomplete('compOuFilter', 'compOuDropdown', (v) => { compOuFilter = v; compPage = 1; loadComputers(); });
+  setupOuAutocomplete('acctOuFilter', 'acctOuDropdown', (v) => { acctOuFilter = v; acctPage = 1; loadAccounts(); });
+  setupOuAutocomplete('netOuFilter', 'netOuDropdown', (v) => { loadNetwork(); });
+});
 
 function setupTierLevels() {
   const addBtn = document.getElementById('tierLevelAddBtn');
