@@ -426,6 +426,7 @@ async function openComputerDetail(name) {
             ${tierLevels.map(t => `<option value="${esc(t)}"${data.tier === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
           </select>
         </div></div>
+        <div class="detail-item"><div class="dl">Accounts</div><div class="dv">${data.accounts.length}</div></div>
       </div>
       <h3 style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;">
         Authenticated Accounts (${data.accounts.length})
@@ -578,6 +579,7 @@ async function openAccountDetail(name) {
             ${tierLevels.map(t => `<option value="${esc(t)}"${data.tier === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
           </select>
         </div></div>
+        <div class="detail-item"><div class="dl">Auth Mappings</div><div class="dv">${data.computers.length}</div></div>
       </div>
       <h3 style="font-size:14px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;">
         Computers Where This Account Authenticated (${data.computers.length})
