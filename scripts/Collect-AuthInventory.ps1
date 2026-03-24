@@ -209,7 +209,8 @@ function Resolve-AccountName {
     # UPN format (user@domain.com): look up sAMAccountName in cache, fallback to prefix
     if ($UserName -match '^([^@]+)@(.+)$') {
         $upnLower = $UserName.ToLower()
-        $d = Normalize-DomainName $Matches[2]
+        # Prefer the event's domain field over UPN suffix (UPN suffix != NetBIOS domain)
+        if ($Domain) { $d = Normalize-DomainName $Domain } else { $d = Normalize-DomainName $Matches[2] }
         if ($upnMap.Count -gt 0 -and $upnMap.ContainsKey($upnLower)) {
             $sam = $upnMap[$upnLower]
             if ($d -and $d -ne '-') { return "$d\$sam" }
