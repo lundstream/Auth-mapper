@@ -145,6 +145,19 @@ if (-not $AccountsOnly) {
     Write-Host "    Found $($computers.Count) computer objects" -ForegroundColor Green
 }
 
+# ── Resolve domain NetBIOS name (needed for DOMAIN\user prefix) ─────────────
+$domain = ''
+$domainPrefix = ''
+try {
+    if ($env:USERDNSDOMAIN) {
+        $domain = $env:USERDNSDOMAIN
+        $domainPrefix = ($env:USERDNSDOMAIN -split '\.')[0].ToUpper()
+    } elseif ($env:USERDOMAIN) {
+        $domain = $env:USERDOMAIN
+        $domainPrefix = $env:USERDOMAIN.ToUpper()
+    }
+} catch { }
+
 # ── Collect Accounts ────────────────────────────────────────────────────────
 $accounts = @()
 if (-not $ComputersOnly) {
@@ -178,8 +191,10 @@ if (-not $ComputersOnly) {
             $ou = $Matches[1]
         }
 
+        $acctName = if ($domainPrefix) { "$domainPrefix\$sam" } else { $sam }
+
         $accounts += [PSCustomObject]@{
-            name     = $sam
+            name     = $acctName
             ou       = $ou
             created  = $created
             enabled  = $enabled
@@ -209,8 +224,10 @@ if (-not $ComputersOnly) {
                 $ou = $Matches[1]
             }
 
+            $gmsaName = if ($domainPrefix) { "$domainPrefix\$sam" } else { $sam }
+
             $accounts += [PSCustomObject]@{
-                name     = $sam
+                name     = $gmsaName
                 ou       = $ou
                 created  = $created
                 enabled  = $true
@@ -225,15 +242,6 @@ if (-not $ComputersOnly) {
 }
 
 # ── Build output ────────────────────────────────────────────────────────────
-$domain = ''
-try {
-    if ($env:USERDNSDOMAIN) {
-        $domain = $env:USERDNSDOMAIN
-    } elseif ($env:USERDOMAIN) {
-        $domain = $env:USERDOMAIN
-    }
-} catch { }
-
 $output = @{
     _type        = 'ad_coverage'
     domain       = $domain
