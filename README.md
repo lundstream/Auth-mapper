@@ -86,6 +86,27 @@ wevtutil epl Security \\jumphost\c$\temp\dc01_security.evtx /q:"*[System[(EventI
 
 Output: `auth_inventory_YYYYMMDD_HHmmss.json`
 
+**AD Coverage Snapshot (optional):**
+
+Collect all computer and account objects from AD to identify coverage gaps — machines and accounts that exist in AD but have never appeared in security event logs.
+
+```powershell
+.\scripts\Collect-ADCoverage.ps1
+.\scripts\Collect-ADCoverage.ps1 -SearchBase "OU=Servers,DC=contoso,DC=com"
+.\scripts\Collect-ADCoverage.ps1 -IncludeDisabled -Server DC01.contoso.com
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `-OutputPath` | script dir | Where to write the JSON output |
+| `-IncludeDisabled` | — | Include disabled computer and account objects |
+| `-ComputersOnly` | — | Only collect computer objects (skip accounts) |
+| `-AccountsOnly` | — | Only collect account objects (skip computers) |
+| `-SearchBase` | — | AD distinguished name to limit scope (e.g. `OU=Servers,DC=contoso,DC=com`) |
+| `-Server` | auto-detect | Target Domain Controller to query |
+
+Output: `ad_coverage_YYYYMMDD_HHmmss.json` — import into the web app alongside auth data to see the **Coverage** gap analysis.
+
 ### 2. Set Up the Web App (Windows)
 
 **Prerequisites:**
