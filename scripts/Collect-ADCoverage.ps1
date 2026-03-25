@@ -111,7 +111,7 @@ if (-not $AccountsOnly) {
     }
 
     $adComputers = Search-AD -Filter $filter `
-        -Properties @('cn', 'distinguishedName', 'operatingSystem', 'whenCreated', 'userAccountControl') `
+        -Properties @('cn', 'distinguishedName', 'operatingSystem', 'whenCreated', 'whenChanged', 'lastLogonTimestamp', 'userAccountControl') `
         -SearchBase $SearchBase -Server $Server
 
     foreach ($c in $adComputers) {
@@ -119,6 +119,11 @@ if (-not $AccountsOnly) {
         $dn   = [string]$c.Properties['distinguishedname'][0]
         $os   = if ($c.Properties['operatingsystem'].Count -gt 0) { [string]$c.Properties['operatingsystem'][0] } else { '' }
         $created = if ($c.Properties['whencreated'].Count -gt 0) { ([datetime]$c.Properties['whencreated'][0]).ToString('o') } else { '' }
+        $modified = if ($c.Properties['whenchanged'].Count -gt 0) { ([datetime]$c.Properties['whenchanged'][0]).ToString('o') } else { '' }
+        $lastLogon = ''
+        if ($c.Properties['lastlogontimestamp'].Count -gt 0) {
+            try { $lastLogon = [datetime]::FromFileTime([long]$c.Properties['lastlogontimestamp'][0]).ToString('o') } catch { }
+        }
 
         # Extract OU from DN (remove CN=name, part)
         $ou = ''
@@ -134,11 +139,13 @@ if (-not $AccountsOnly) {
         $enabled = -not [bool]($uac -band 2)
 
         $computers += [PSCustomObject]@{
-            name     = $cn.ToUpper()
-            ou       = $ou
-            os       = $os
-            created  = $created
-            enabled  = $enabled
+            name       = $cn.ToUpper()
+            ou         = $ou
+            os         = $os
+            created    = $created
+            modified   = $modified
+            last_logon = $lastLogon
+            enabled    = $enabled
         }
     }
 
@@ -170,13 +177,18 @@ if (-not $ComputersOnly) {
     }
 
     $adAccounts = Search-AD -Filter $filter `
-        -Properties @('sAMAccountName', 'distinguishedName', 'whenCreated', 'userAccountControl', 'servicePrincipalName') `
+        -Properties @('sAMAccountName', 'distinguishedName', 'whenCreated', 'whenChanged', 'lastLogonTimestamp', 'userAccountControl', 'servicePrincipalName') `
         -SearchBase $SearchBase -Server $Server
 
     foreach ($a in $adAccounts) {
         $sam  = [string]$a.Properties['samaccountname'][0]
         $dn   = [string]$a.Properties['distinguishedname'][0]
         $created = if ($a.Properties['whencreated'].Count -gt 0) { ([datetime]$a.Properties['whencreated'][0]).ToString('o') } else { '' }
+        $modified = if ($a.Properties['whenchanged'].Count -gt 0) { ([datetime]$a.Properties['whenchanged'][0]).ToString('o') } else { '' }
+        $lastLogon = ''
+        if ($a.Properties['lastlogontimestamp'].Count -gt 0) {
+            try { $lastLogon = [datetime]::FromFileTime([long]$a.Properties['lastlogontimestamp'][0]).ToString('o') } catch { }
+        }
         $hasSPN = $a.Properties['serviceprincipalname'].Count -gt 0
 
         $uac = 0
@@ -194,11 +206,13 @@ if (-not $ComputersOnly) {
         $acctName = if ($domainPrefix) { "$domainPrefix\$sam" } else { $sam }
 
         $accounts += [PSCustomObject]@{
-            name     = $acctName
-            ou       = $ou
-            created  = $created
-            enabled  = $enabled
-            has_spn  = $hasSPN
+            name       = $acctName
+            ou         = $ou
+            created    = $created
+            modified   = $modified
+            last_logon = $lastLogon
+            enabled    = $enabled
+            has_spn    = $hasSPN
         }
     }
 
@@ -211,13 +225,18 @@ if (-not $ComputersOnly) {
 
     try {
         $adGmsa = Search-AD -Filter $gmsaFilter `
-            -Properties @('sAMAccountName', 'distinguishedName', 'whenCreated', 'userAccountControl') `
+            -Properties @('sAMAccountName', 'distinguishedName', 'whenCreated', 'whenChanged', 'lastLogonTimestamp', 'userAccountControl') `
             -SearchBase $SearchBase -Server $Server
 
         foreach ($g in $adGmsa) {
             $sam  = [string]$g.Properties['samaccountname'][0]
             $dn   = [string]$g.Properties['distinguishedname'][0]
             $created = if ($g.Properties['whencreated'].Count -gt 0) { ([datetime]$g.Properties['whencreated'][0]).ToString('o') } else { '' }
+            $modified = if ($g.Properties['whenchanged'].Count -gt 0) { ([datetime]$g.Properties['whenchanged'][0]).ToString('o') } else { '' }
+            $lastLogon = ''
+            if ($g.Properties['lastlogontimestamp'].Count -gt 0) {
+                try { $lastLogon = [datetime]::FromFileTime([long]$g.Properties['lastlogontimestamp'][0]).ToString('o') } catch { }
+            }
 
             $ou = ''
             if ($dn -match '^CN=[^,]+,(.+)$') {
@@ -227,11 +246,13 @@ if (-not $ComputersOnly) {
             $gmsaName = if ($domainPrefix) { "$domainPrefix\$sam" } else { $sam }
 
             $accounts += [PSCustomObject]@{
-                name     = $gmsaName
-                ou       = $ou
-                created  = $created
-                enabled  = $true
-                has_spn  = $true
+                name       = $gmsaName
+                ou         = $ou
+                created    = $created
+                modified   = $modified
+                last_logon = $lastLogon
+                enabled    = $true
+                has_spn    = $true
             }
         }
         Write-Host "    Found $($accounts.Count) account objects (including gMSA)" -ForegroundColor Green
