@@ -1643,7 +1643,7 @@ function renderCoverageComputers() {
     title.textContent = `Missing Computers (${coverageData.computers.missing})`;
   } else if (filter === 'seen') {
     // We don't have the full seen list from API since it would be large; show a message
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px;">Seen computers are already visible in the Computers tab.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:20px;">Seen computers are already visible in the Computers tab.</td></tr>';
     title.textContent = `Seen Computers (${coverageData.computers.seen})`;
     return;
   } else {
@@ -1658,7 +1658,7 @@ function renderCoverageComputers() {
   }
 
   if (filtered.length === 0) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px;">No missing computers found. Full coverage!</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:20px;">No missing computers found. Full coverage!</td></tr>';
     return;
   }
 
@@ -1667,7 +1667,8 @@ function renderCoverageComputers() {
       <td><strong>${esc(c.name)}</strong></td>
       <td style="font-size:11px;color:var(--text3);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.ou)}">${esc(c.ou || '-')}</td>
       <td style="font-size:12px;">${esc(c.os || '-')}</td>
-      <td style="font-size:12px;color:var(--text2);">${c.created ? fmtDate(c.created) : '-'}</td>
+      <td style="font-size:12px;color:var(--text2);">${c.last_logon ? fmtDate(c.last_logon) : '-'}</td>
+      <td style="font-size:12px;color:var(--text2);">${c.modified ? fmtDate(c.modified) : '-'}</td>
       <td><span class="badge badge-red">Missing</span></td>
     </tr>
   `).join('');
@@ -1689,6 +1690,7 @@ function renderCoverageAccounts() {
   } else if (filter === 'seen') {
     body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px;">Seen accounts are already visible in the Accounts tab.</td></tr>';
     title.textContent = `Seen Accounts (${coverageData.accounts.seen})`;
+    title.textContent = `Seen Accounts (${coverageData.accounts.seen})`;
     return;
   } else {
     items = allAd;
@@ -1703,14 +1705,15 @@ function renderCoverageAccounts() {
   if (filtered.length === 0) {
     body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px;">No missing accounts found. Full coverage!</td></tr>';
     return;
+    return;
   }
 
   body.innerHTML = filtered.map(a => `
     <tr>
       <td><strong>${esc(a.name)}</strong></td>
       <td style="font-size:11px;color:var(--text3);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(a.ou)}">${esc(a.ou || '-')}</td>
-      <td>${a.has_spn ? '<span class="badge badge-yellow">SPN</span>' : '-'}</td>
-      <td style="font-size:12px;color:var(--text2);">${a.created ? fmtDate(a.created) : '-'}</td>
+      <td style="font-size:12px;color:var(--text2);">${a.last_logon ? fmtDate(a.last_logon) : '-'}</td>
+      <td style="font-size:12px;color:var(--text2);">${a.modified ? fmtDate(a.modified) : '-'}</td>
       <td><span class="badge badge-red">Missing</span></td>
     </tr>
   `).join('');

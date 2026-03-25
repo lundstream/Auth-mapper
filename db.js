@@ -133,6 +133,8 @@ function initSchema() {
       ou          TEXT DEFAULT '',
       os          TEXT DEFAULT '',
       created     TEXT DEFAULT '',
+      modified    TEXT DEFAULT '',
+      last_logon  TEXT DEFAULT '',
       enabled     INTEGER DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS idx_cov_comp_snapshot ON coverage_computers(snapshot_id);
@@ -144,12 +146,27 @@ function initSchema() {
       name        TEXT NOT NULL COLLATE NOCASE,
       ou          TEXT DEFAULT '',
       created     TEXT DEFAULT '',
-      enabled     INTEGER DEFAULT 1,
-      has_spn     INTEGER DEFAULT 0
+      modified    TEXT DEFAULT '',
+      last_logon  TEXT DEFAULT '',
+      enabled     INTEGER DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS idx_cov_acct_snapshot ON coverage_accounts(snapshot_id);
     CREATE INDEX IF NOT EXISTS idx_cov_acct_name ON coverage_accounts(name);
   `);
+
+  // Migrate coverage tables: add last_logon, modified columns
+  try {
+    db.prepare(`SELECT last_logon FROM coverage_computers LIMIT 0`).get();
+  } catch {
+    db.exec(`ALTER TABLE coverage_computers ADD COLUMN modified TEXT DEFAULT ''`);
+    db.exec(`ALTER TABLE coverage_computers ADD COLUMN last_logon TEXT DEFAULT ''`);
+  }
+  try {
+    db.prepare(`SELECT last_logon FROM coverage_accounts LIMIT 0`).get();
+  } catch {
+    db.exec(`ALTER TABLE coverage_accounts ADD COLUMN modified TEXT DEFAULT ''`);
+    db.exec(`ALTER TABLE coverage_accounts ADD COLUMN last_logon TEXT DEFAULT ''`);
+  }
 }
 
 /* ── Import ────────────────────────────────────────────────────────────── */
@@ -827,11 +844,11 @@ function importCoverage(jsonData) {
   `);
 
   const insertComp = db.prepare(`
-    INSERT INTO coverage_computers (snapshot_id, name, ou, os, created, enabled) VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO coverage_computers (snapshot_id, name, ou, os, created, modified, last_logon, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertAcct = db.prepare(`
-    INSERT INTO coverage_accounts (snapshot_id, name, ou, created, enabled, has_spn) VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO coverage_accounts (snapshot_id, name, ou, created, modified, last_logon, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   const doImport = db.transaction(() => {
@@ -849,10 +866,10 @@ function importCoverage(jsonData) {
     const snapId = info.lastInsertRowid;
 
     for (const c of computers) {
-      insertComp.run(snapId, String(c.name || '').toUpperCase(), c.ou || '', c.os || '', c.created || '', c.enabled ? 1 : 0);
+      insertComp.run(snapId, String(c.name || '').toUpperCase(), c.ou || '', c.os || '', c.created || '', c.modified || '', c.last_logon || '', c.enabled ? 1 : 0);
     }
     for (const a of accounts) {
-      insertAcct.run(snapId, String(a.name || ''), a.ou || '', a.created || '', a.enabled ? 1 : 0, a.has_spn ? 1 : 0);
+      insertAcct.run(snapId, String(a.name || ''), a.ou || '', a.created || '', a.modified || '', a.last_logon || '', a.enabled ? 1 : 0);
     }
 
     return { snapshot_id: Number(snapId), computers: computers.length, accounts: accounts.length };
@@ -869,9 +886,9 @@ function getCoverageData() {
   if (!snapshot) return null;
 
   // AD computers from snapshot
-  const adComputers = db.prepare(`SELECT name, ou, os, created, enabled FROM coverage_computers WHERE snapshot_id = ?`).all(snapshot.id);
+  const adComputers = db.prepare(`SELECT name, ou, os, created, modified, last_logon, enabled FROM coverage_computers WHERE snapshot_id = ?`).all(snapshot.id);
   // AD accounts from snapshot
-  const adAccounts = db.prepare(`SELECT name, ou, created, enabled, has_spn FROM coverage_accounts WHERE snapshot_id = ?`).all(snapshot.id);
+  const adAccounts = db.prepare(`SELECT name, ou, created, modified, last_logon, enabled FROM coverage_accounts WHERE snapshot_id = ?`).all(snapshot.id);
 
   // Imported computers (from auth data)
   const importedComputers = db.prepare(`SELECT name FROM computers`).all().map(r => r.name.toUpperCase());
