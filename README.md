@@ -34,7 +34,7 @@ Visualize which accounts authenticate against which servers by collecting data f
 - **Network map** — Interactive canvas-based graph showing account → computer authentication relationships; filter by search, OU, tier, owner, or service accounts only
 - **OU autocomplete** — Custom Chrome-style dropdown on all OU filters with top-5 matching results, bold keyword highlighting, keyboard navigation, and full-path tooltip on hover
 - **Service account detection** — Configurable naming patterns (e.g. `svc`, `service`, `gmsa`) with "Service Accounts Only" filter on all views
-- **Coverage gap analysis** — Import AD computer/account snapshots to compare against observed auth data; identify machines and accounts in AD that have no authentication activity
+- **Coverage gap analysis** — Import AD computer/account snapshots to compare against observed auth data; identify machines and accounts in AD that have no authentication activity; shows last logon and modified timestamps from AD
 - **Import system** — Drag & drop JSON files, import from server path, supports multiple import runs with data merging; import history with per-run counts
 - **CSV export** — Export computers, accounts, or full mappings to CSV; supports filtered exports
 - **Backup & restore** — Download a full JSON backup of all data (computers, accounts, mappings, IPs, tiers, owners, import history) and settings; restore from backup replaces all data
@@ -88,7 +88,7 @@ Output: `auth_inventory_YYYYMMDD_HHmmss.json`
 
 **AD Coverage Snapshot (optional):**
 
-Collect all computer and account objects from AD to identify coverage gaps — machines and accounts that exist in AD but have never appeared in security event logs.
+Collect all computer and account objects from AD to identify coverage gaps — machines and accounts that exist in AD but have never appeared in security event logs. Includes `lastLogonTimestamp` and `whenChanged` for staleness analysis. Account names are exported in `DOMAIN\username` format to match auth inventory data.
 
 ```powershell
 .\scripts\Collect-ADCoverage.ps1
