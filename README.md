@@ -131,6 +131,8 @@ Open http://localhost:3002 in your browser.
 
 The app runs entirely on your local machine — no internet connection required after setup.
 
+**Air-gapped / offline installation:** Run `npm install` once on an internet-connected machine, then transfer the entire `Auth-mapper` folder (including `node_modules/`) to the offline server. All frontend libraries (Chart.js, Feather Icons) are served from `node_modules` — no CDN access is needed.
+
 ### 3. Import Data
 
 - Go to **Data & Settings** tab

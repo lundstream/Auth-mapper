@@ -31,6 +31,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// Vendor assets (served from node_modules for offline/air-gapped use)
+app.use('/vendor/chartjs', express.static(path.join(__dirname, 'node_modules/chart.js/dist'), { maxAge: '1y', immutable: true }));
+app.use('/vendor/feathericons', express.static(path.join(__dirname, 'node_modules/feather-icons/dist'), { maxAge: '1y', immutable: true }));
+
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 

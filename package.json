@@ -8,7 +8,9 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2",
+    "chart.js": "^4.5.1",
     "cors": "^2.8.6",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "feather-icons": "^4.29.2"
   }
 }
