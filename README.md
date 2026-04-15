@@ -162,4 +162,4 @@ Both are configurable from the web UI under **Data & Settings**.
 - SQLite (better-sqlite3)
 - Chart.js 4
 - Feather Icons
-- Vanilla JS frontend (same look & feel as [Vire](https://github.com/lundstream/Vire))
+- Vanilla JS frontend
